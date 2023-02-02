@@ -17,6 +17,7 @@ If bundler is not being used to manage dependencies, install the gem by executin
 ### Export
 
 ```ruby
+# Exporter class
 class UserExporter < NtqExcelsior::Exporter
 
   schema ({
@@ -51,6 +52,12 @@ class UserExporter < NtqExcelsior::Exporter
 
 end
 
+exporter = UserExporter.new(@users)
+exporter.export
+File.open("export.xlsx", "w") do |tpm|
+  tpm.binmode
+  tpm.write(file.to_stream.read)
+end
 ```
 
 ## Development

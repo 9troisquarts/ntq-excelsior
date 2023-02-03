@@ -20,13 +20,20 @@ If bundler is not being used to manage dependencies, install the gem by executin
 # Exporter class
 class UserExporter < NtqExcelsior::Exporter
 
+  styles ({
+    blue: {
+      fg_color: "2F5496",
+    }
+  })
+
   schema ({
-    name: 'Mobilités',
+    name: 'Utilisateurs',
     extra_headers: [
       [
         {
           title: "Utilisateurs",
-          width: 4
+          width: 4,
+          styles: [:bold]
         }
       ],
     ],
@@ -34,11 +41,17 @@ class UserExporter < NtqExcelsior::Exporter
       {
         title: 'Name',
         resolve: -> (record) { [record.first_name, record.last_name].join(' ') },
+        styles: [:bold, :blue]
       },
       {
         title: 'Email',
         resolve: 'email'
       },
+      {
+        title: 'Birthdate',
+        resolve: 'birthdate',
+        type: :date
+      }
       {
         title: 'Address (nested)',
         resolve: ['address', 'address_one']

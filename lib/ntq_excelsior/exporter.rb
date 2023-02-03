@@ -23,7 +23,7 @@ module NtqExcelsior
         @schema ||= value
       end
       def styles(value = nil)
-        @schema ||= value
+        @styles ||= value
       end
     end
 
@@ -73,16 +73,26 @@ module NtqExcelsior
       count
     end
 
-    def get_styles(styles)
+    def get_styles(row_styles)
+      return {} unless row_styles && row_styles.length > 0
+
+      styles_hash = {}
+      stylesheet = styles || {}
+      row_styles.each do |style_key|
+        styles_hash = styles_hash.merge(stylesheet[style_key] || DEFAULT_STYLES[style_key] || {})
+      end
+      styles_hash
     end
 
     def resolve_header_row(headers, index)
-      row = { values: [], styles: nil, merge_cells: [], height: nil }
-
+      row = { values: [], styles: [], merge_cells: [], height: nil }
+      return row unless headers
+      
       col_index = 1
       headers.each do |header|
         width = header[:width] || 1
         row[:values] << header[:title] || ''
+        row[:styles] << get_styles(header[:styles])
         if width > 1
           colspan = width - 1
           row[:values].push(*Array.new(colspan, nil))
@@ -109,15 +119,20 @@ module NtqExcelsior
       
       accessors = resolver
       accessors = accessors.split(".") if accessors.is_a?(String)
-      dig_value(record, accessors)
+      value = dig_value(record, accessors)
+      value = value.strftime("%Y-%m-%d") if value.is_a?(Date)
+      value = value.strftime("%Y-%m-%d %H:%M:%S") if value.is_a?(Time) | value.is_a?(DateTime)
+      value
     end
 
     def resolve_record_row(schema, record, index)
-      row = { values: [], styles: nil, merge_cells: [], height: nil }
+      row = { values: [], styles: [], merge_cells: [], height: nil, types: [] }
       col_index = 1
       schema.each do |column|
         width = column[:width] || 1
         row[:values] << format_value(column[:resolve], record)
+        row[:types] << column[:type] || :string
+        row[:styles] << get_styles(column[:styles])
         
         if width > 1
           colspan = width - 1
@@ -150,22 +165,26 @@ module NtqExcelsior
 
     def add_sheet_content(content, wb_styles, sheet)
       content[:rows].each do |row|
-        row_style = wb_styles.add_style(row[:styles]) if row[:styles].is_a? Hash
-        row_style = row[:styles]&.map { |style| wb_styles.add_style(style) if style } if row[:styles].is_a? Array
-        sheet.add_row row[:values], style: row_style, height: row[:height]
-        next unless row[:merge_cells]
-
-        row[:merge_cells]&.each do |range|
-          sheet.merge_cells range
+        row_style = []
+        if row[:styles].is_a?(Array) && row[:styles].any?
+          row[:styles].each do |style|
+            row_style << wb_styles.add_style(style || {})
+          end
+        end
+        sheet.add_row row[:values], style: row_style, height: row[:height], types: row[:types]
+        if row[:merge_cells]
+          row[:merge_cells]&.each do |range|
+            sheet.merge_cells range
+          end
         end
       end
 
-      # do not apply styles if there are now rows
+      # do not apply styles if there are no rows
       if content[:rows].present?
-        content[:styles]&.each_with_index do |(range, styles), index|
+        content[:styles]&.each_with_index do |(range, sty), index|
           begin
-            sheet.add_style range, styles.except(:border) if range && styles
-            sheet.add_border range, styles[:border] if range && styles && styles[:border]
+            sheet.add_style range, sty.except(:border) if range && sty
+            sheet.add_border range, sty[:border] if range && sty && sty[:border]
           rescue NoMethodError
             # do not apply styles if error
           end
@@ -185,13 +204,13 @@ module NtqExcelsior
     end
 
 		def export
-      p = Axlsx::Package.new
-      wb = p.workbook
+      package = Axlsx::Package.new
+      wb = package.workbook
       wb_styles = wb.styles
 
       generate_workbook(wb, wb_styles)
 
-      p
+      package
     end
 
 	end

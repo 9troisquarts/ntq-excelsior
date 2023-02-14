@@ -49,8 +49,7 @@ class UserExporter < NtqExcelsior::Exporter
       },
       {
         title: 'Birthdate',
-        resolve: 'birthdate',
-        type: :date
+        resolve: 'birthdate'
       }
       {
         title: 'Address (nested)',
@@ -59,6 +58,11 @@ class UserExporter < NtqExcelsior::Exporter
       {
         title: 'City (nested)',
         resolve: ['address', 'city']
+      },
+      {
+        title: 'Age',
+        resolve: 'age',
+        type: :number
       }
     ]
   })

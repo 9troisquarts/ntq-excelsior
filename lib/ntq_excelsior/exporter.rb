@@ -5,6 +5,12 @@ module NtqExcelsior
     attr_accessor :data
 
     DEFAULT_STYLES = {
+      date_format: {
+        format_code: 'dd-mm-yyyy'
+      },
+      time_format: {
+        format_code: 'dd-mm-yyyy hh:mm:ss'
+      },
       bold: {
         b: true
       },
@@ -73,12 +79,13 @@ module NtqExcelsior
       count
     end
 
-    def get_styles(row_styles)
-      return {} unless row_styles && row_styles.length > 0
+    def get_styles(row_styles, cell_styles = [])
+      row_styles ||= []
+      return {} if row_styles.length == 0 && cell_styles.length == 0
 
       styles_hash = {}
       stylesheet = styles || {}
-      row_styles.each do |style_key|
+      (row_styles + cell_styles).each do |style_key|
         styles_hash = styles_hash.merge(stylesheet[style_key] || DEFAULT_STYLES[style_key] || {})
       end
       styles_hash
@@ -115,14 +122,26 @@ module NtqExcelsior
     end
 
     def format_value(resolver, record)
-      return resolver.call(record) if resolver.is_a?(Proc)
-      
-      accessors = resolver
-      accessors = accessors.split(".") if accessors.is_a?(String)
-      value = dig_value(record, accessors)
-      value = value.strftime("%Y-%m-%d") if value.is_a?(Date)
-      value = value.strftime("%Y-%m-%d %H:%M:%S") if value.is_a?(Time) | value.is_a?(DateTime)
-      value
+      styles = []
+      type = nil
+      if resolver.is_a?(Proc)
+        value = resolver.call(record) 
+      else
+        accessors = resolver
+        accessors = accessors.split(".") if accessors.is_a?(String)
+        value = dig_value(record, accessors)
+      end
+      if value.is_a?(Date)
+        value = value.strftime("%Y-%m-%d")
+        styles << :date_format
+        type = :date
+      end
+      if value.is_a?(Time) | value.is_a?(DateTime)
+        value = value.strftime("%Y-%m-%d %H:%M:%S")
+        styles << :time_format
+        type = :time
+      end
+      { value: value, styles: styles, type: type }
     end
 
     def resolve_record_row(schema, record, index)
@@ -130,10 +149,10 @@ module NtqExcelsior
       col_index = 1
       schema.each do |column|
         width = column[:width] || 1
-        row[:values] << format_value(column[:resolve], record)
-        row[:types] << column[:type] || :string
-        row[:styles] << get_styles(column[:styles])
-        
+        formatted_value = format_value(column[:resolve], record)
+        row[:values] << formatted_value[:value]
+        row[:types] << (column[:type] || formatted_value[:type])
+        row[:styles] << get_styles(column[:styles], formatted_value[:styles])
         if width > 1
           colspan = width - 1
           row[:values].push(*Array.new(colspan, nil))
@@ -143,7 +162,6 @@ module NtqExcelsior
 
         col_index += 1
       end
-
       row
     end
 

@@ -112,6 +112,11 @@ class UserImporter < NtqExcelsior::Importer
     end
   end
 end
+
+importer = UserImporter.new
+importer.file = file
+result = importer.import
+# { success_count: 2, error_lines: [] }
 ```
 
 ## Development

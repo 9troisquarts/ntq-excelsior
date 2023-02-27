@@ -87,9 +87,39 @@ send_data stream, type: 'application/xlsx', filename: "filename.xlsx"
 ```ruby
 class UserImporter < NtqExcelsior::Importer
 
-  model_klass User
+  model_klass "User"
 
-  primary_key :id
+  primary_key :email
+
+  # autosave false
+
+  structure [{
+    header: "Email",
+    description: "Email de l'utilisateur a créer ou modifier",
+    required: true,
+  }, 
+  {
+    header: "Actif",
+    description: "Utilisateur activé",
+    required: true,
+    values: [
+      {
+        header: "True",
+        description: "Activé",
+      }, {
+        header: "False",
+        description: "Inactivé",
+      }
+    ]
+  }, {
+    header: "Prénom",
+    required: true,
+  }, {
+    header: "Nom",
+    required: true,
+  }]
+
+  sample_file "/import_samples/users.xlsx"
 
   schema({
     email: 'Email',

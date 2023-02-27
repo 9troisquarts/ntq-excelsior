@@ -7,6 +7,10 @@ module NtqExcelsior
 
     class << self
 
+      def autosave(value = nil)
+        @autosave ||= value
+      end
+
       def spreadsheet_options(value = nil)
         @spreadsheet_options ||= value
       end
@@ -61,10 +65,10 @@ module NtqExcelsior
       spreadsheet.sheet(spreadsheet.sheets[0]).parse(header_search: required_headers)
     end
 
-    def detect_header_scheme(line)
+    def detect_header_scheme
       return @header_scheme if @header_scheme
       @header_scheme = {}
-      l = line.dup
+      l = spreadsheet_data[0].dup
 
       self.class.schema.each do |field, column_config|
         header = column_config.is_a?(Hash) ? column_config[:header] : column_config
@@ -84,7 +88,7 @@ module NtqExcelsior
     def parse_line(line)
       parsed_line = {}
       line.each do |header, value|
-        header_scheme = detect_header_scheme(line)
+        header_scheme = detect_header_scheme
         if header.to_s == self.class.primary_key.to_s
           parsed_line[self.class.primary_key] = value
           next
@@ -109,20 +113,32 @@ module NtqExcelsior
     # id for default query in model
     # line in case an override is needed to find correct record
     def find_or_initialize_record(line)
-      raise "Primary key must be set for using the default find_or_initialize" unless self.class.primary_key
+      return nil unless self.class.primary_key && self.class.model_klass
 
-      self.class.model_klass.find_or_initialize_by("#{self.class.primary_key}": line[self.class.primary_key.to_sym])
+      self.class.model_klass.constantize.find_or_initialize_by("#{self.class.primary_key}": line[self.class.primary_key.to_sym])
     end
 
     def import_line(line, save: true)
       record = find_or_initialize_record(line)
+      @success = false
+      @action = nil
+      @errors = []
 
       yield(record, line) if block_given?
 
-      status = {}
-      return { status: :success } if record.save
+      if (self.class.autosave.nil? || self.class.autosave)
+        @action = record.persisted? ? 'update' : 'create'
+        if save
+          @success = record.save
+        else
+          @success = record.valid?
+        end
+        @errors = record.errors.full_messages.concat(@errors) if record.errors.any?
+      end
 
-      return { status: :error, errors: record.errors.full_messages.join(", ")  }
+      return { status: :success, action: @action } if @success
+
+      return { status: :error, errors: @errors.join(", ") }
     end
 
     def import(save: true, status_tracker: nil)

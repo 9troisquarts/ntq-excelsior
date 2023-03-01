@@ -11,6 +11,10 @@ module NtqExcelsior
         @autosave ||= value
       end
 
+      def autoset(value = nil)
+        @autoset ||= value
+      end
+
       def spreadsheet_options(value = nil)
         @spreadsheet_options ||= value
       end
@@ -115,7 +119,29 @@ module NtqExcelsior
     def find_or_initialize_record(line)
       return nil unless self.class.primary_key && self.class.model_klass
 
-      self.class.model_klass.constantize.find_or_initialize_by("#{self.class.primary_key}": line[self.class.primary_key.to_sym])
+      if line[self.class.primary_key.to_sym].present?
+        if self.class.primary_key.to_sym == :id
+          record = self.class.model_klass.constantize.find_by id: line[self.class.primary_key.to_sym]
+        else
+          record = self.class.model_klass.constantize.find_or_initialize_by("#{self.class.primary_key}": line[self.class.primary_key.to_sym])
+        end
+      end
+      record = self.class.model_klass.constantize.new unless record
+      record
+    end
+
+    def record_attributes(record)
+      return @record_attributes if @record_attributes
+
+      @record_attributes = self.class.schema.keys.select{|k| k.to_sym != :id && record.respond_to?(:"#{k}=") }
+    end
+
+    def set_record_fields(record, line)
+      attributes_to_set = record_attributes(record)
+      attributes_to_set.each do |attribute|
+        record.send(:"#{attribute}=", line[attribute])
+      end
+      record
     end
 
     def import_line(line, save: true)
@@ -123,6 +149,10 @@ module NtqExcelsior
       @success = false
       @action = nil
       @errors = []
+      
+      if (!self.class.autoset.nil? || self.class.autoset)
+        record = set_record_fields(record, line)
+      end
 
       yield(record, line) if block_given?
 

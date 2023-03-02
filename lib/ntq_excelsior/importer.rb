@@ -103,8 +103,6 @@ module NtqExcelsior
         end
       end
 
-      raise Roo::HeaderRowNotFoundError unless (@required_line_keys - parsed_line.keys).size == 0
-
       parsed_line
     end
 

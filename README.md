@@ -45,6 +45,7 @@ class UserExporter < NtqExcelsior::Exporter
       },
       {
         title: 'Email',
+        header_styles: [:blue],
         resolve: 'email'
       },
       {

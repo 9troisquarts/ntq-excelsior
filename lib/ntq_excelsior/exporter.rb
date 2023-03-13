@@ -99,7 +99,7 @@ module NtqExcelsior
       headers.each do |header|
         width = header[:width] || 1
         row[:values] << header[:title] || ''
-        row[:styles] << get_styles(header[:styles])
+        row[:styles] << get_styles(header[:header_styles] || header[:styles])
         if width > 1
           colspan = width - 1
           row[:values].push(*Array.new(colspan, nil))

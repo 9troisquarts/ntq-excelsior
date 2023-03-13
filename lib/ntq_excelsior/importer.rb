@@ -148,7 +148,7 @@ module NtqExcelsior
       @action = nil
       @errors = []
       
-      if (!self.class.autoset.nil? || self.class.autoset)
+      if (self.class.autoset)
         record = set_record_fields(record, line)
       end
 

@@ -92,6 +92,8 @@ class UserImporter < NtqExcelsior::Importer
 
   primary_key :email
 
+  ## if set to save, the record will not be save automatically after import_line
+  ## Errors have to be added to the @errors hash manually
   # autosave false
 
   structure [{

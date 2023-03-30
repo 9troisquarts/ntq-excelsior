@@ -144,6 +144,8 @@ module NtqExcelsior
 
     def import_line(line, save: true)
       record = find_or_initialize_record(line)
+      return { status: :not_found } unless record
+
       @success = false
       @action = nil
       @errors = []
@@ -173,11 +175,14 @@ module NtqExcelsior
       at = 0
       errors_lines = []
       success_count = 0
+      not_found_count = 0
       lines.each_with_index do |line, index|
-        break if errors_lines.size == self.class.max_error_count 
+        break if errors_lines.size == self.class.max_error_count
 
         result = import_line(line.with_indifferent_access, save: true)
         case result[:status]
+        when :not_found
+          not_found_count += 1
         when :success
           success_count += 1
         when :error
@@ -188,12 +193,12 @@ module NtqExcelsior
 
         if @status_tracker&.is_a?(Proc)
           at = (((index + 1).to_d / lines.size) * 100.to_d) 
-          @status_tracker.call(at) 
+          @status_tracker.call(at)
         end
       end
 
-      { success_count: success_count, errors: errors_lines }
+      { success_count: success_count, not_found_count: not_found_count, errors: errors_lines }
     end
 
   end
-end 
+end

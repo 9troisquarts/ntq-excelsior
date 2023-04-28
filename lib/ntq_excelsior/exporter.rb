@@ -132,7 +132,6 @@ module NtqExcelsior
         value = dig_value(record, accessors)
       end
       if value.is_a?(String)
-        styles << :string_format
         type = :string
       end
       if value.is_a?(Date)

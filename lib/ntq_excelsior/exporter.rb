@@ -53,7 +53,7 @@ module NtqExcelsior
       letters << index % 26
 
       while index >= 26 do
-        index = index / 26 - 1
+        index = (index / 26) - 1
         letters << index % 26
       end
 
@@ -130,6 +130,10 @@ module NtqExcelsior
         accessors = resolver
         accessors = accessors.split(".") if accessors.is_a?(String)
         value = dig_value(record, accessors)
+      end
+      if value.is_a?(String)
+        styles << :string_format
+        type = :string
       end
       if value.is_a?(Date)
         value = value.strftime("%Y-%m-%d")

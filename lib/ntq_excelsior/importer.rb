@@ -57,7 +57,7 @@ module NtqExcelsior
 
       @required_columns = self.class.schema.select { |field, column_config| !column_config.is_a?(Hash) || !column_config.has_key?(:required) || column_config[:required] }
       @required_line_keys = @required_columns.map{ |k, v| k }
-      @required_headers = @required_columns.map{ |k, column_config| column_config.is_a?(Hash) ? column_config[:header] : column_config }.map{|header| header.is_a?(String) ? Regexp.new(header, "i") : header}
+      @required_headers = @required_columns.map{ |k, column_config| column_config.is_a?(Hash) ? column_config[:header] : column_config }.map{|header| header.is_a?(String) ? Regexp.new("^#{header}$", "i") : header}
       if self.class.primary_key && !@required_line_keys.include?(self.class.primary_key)
         @required_line_keys = @required_line_keys.unshift(self.class.primary_key)
         @required_headers = @required_headers.unshift(Regexp.new(self.class.primary_key.to_s, "i")) 
@@ -78,7 +78,7 @@ module NtqExcelsior
         header = column_config.is_a?(Hash) ? column_config[:header] : column_config
 
         l.each do |parsed_header, _value|
-          next unless header.is_a?(Regexp) && parsed_header.match?(header) || header.is_a?(String) && parsed_header == header
+          next unless (header.is_a?(Regexp) && parsed_header && parsed_header.match?(header)) || header.is_a?(String) && parsed_header == header
           
           l.delete(parsed_header)
           @header_scheme[parsed_header] = field

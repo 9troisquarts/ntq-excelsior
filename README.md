@@ -132,7 +132,8 @@ class UserImporter < NtqExcelsior::Importer
       required: true
     },
     active: {
-      header: /Actif/i,
+      header: /Actif.+/i,
+      humanized_header: 'Actif', # (Optional) if provided, will be displayed instead regex in missing headers
       required: false
     }
   })

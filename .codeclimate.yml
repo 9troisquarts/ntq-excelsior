@@ -1,0 +1,19 @@
+version: "2"
+plugins:
+  rubocop:
+    enabled: true
+    channel: "beta"
+exclude_patterns:
+- "config/"
+- "db/"
+- "dist/"
+- "features/"
+- "**/node_modules/"
+- "script/"
+- "**/spec/"
+- "**/test/"
+- "**/tests/"
+- "Tests/"
+- "**/vendor/"
+- "**/*_test.go"
+- "**/*.d.ts"

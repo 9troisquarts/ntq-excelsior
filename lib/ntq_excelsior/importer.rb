@@ -54,7 +54,7 @@ module NtqExcelsior
       return @required_headers if @required_headers
 
       @required_columns = self.class.schema.select { |_field, column_config| !column_config.is_a?(Hash) || !column_config.key?(:required) || column_config[:required] }
-      @required_headers = @required_columns.values.map { |column| get_column_header(column) }.map { |header| tranform_header_to_regexp(header) }
+      @required_headers = @required_columns.values.map { |column| get_column_header(column) }.map { |header| transform_header_to_regexp(header) }
       if self.class.primary_key && !@required_columns.keys.include?(self.class.primary_key)
         @required_headers.unshift(Regexp.new(self.class.primary_key.to_s, "i"))
       end
@@ -69,12 +69,14 @@ module NtqExcelsior
         missing_headers = []
 
         e.message.slice(1..-1).chop.split(",").map(&:strip).each do |header_missing|
-          header_missing_regex = tranform_header_to_regexp(header_missing, true)
+          header_missing_regex = transform_header_to_regexp(header_missing, true)
           header_found = @required_columns.values.find do |column|
-            tranform_header_to_regexp(get_column_header(column)) == header_missing_regex
+            transform_header_to_regexp(get_column_header(column)) == header_missing_regex
           end
           if header_found && header_found.is_a?(Hash) && header_found[:humanized_header].present?
             missing_headers << header_found[:humanized_header]
+          elsif header_found&.is_a?(String)
+            missing_headers << header_found
           else
             missing_headers << header_missing
           end
@@ -224,7 +226,7 @@ module NtqExcelsior
       column[:header]
     end
   
-    def tranform_header_to_regexp(header, gsub_enclosure = false)
+    def transform_header_to_regexp(header, gsub_enclosure = false)
       return header unless header.is_a?(String)
 
       if gsub_enclosure && header.scan(/^\/[\^]?([^(\$\/)]+)[\$]?\/[i]?$/i) && $1

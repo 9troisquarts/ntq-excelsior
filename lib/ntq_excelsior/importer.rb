@@ -91,6 +91,7 @@ module NtqExcelsior
       return @header_scheme if @header_scheme
 
       @header_scheme = {}
+      # Read the first line of file (not header)
       l = spreadsheet_data[0].dup || []
 
       self.class.schema.each do |field, column_config|

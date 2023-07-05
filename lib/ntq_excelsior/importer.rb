@@ -64,7 +64,7 @@ module NtqExcelsior
     def spreadsheet_data
       begin
         spreadsheet_data = spreadsheet.sheet(spreadsheet.sheets[0]).parse(header_search: required_headers)
-        raise 'File is inconsistent, please check all headers of your file for specials characters (, / ; etc...)'
+        raise 'File is inconsistent, please check all headers of your file for specials characters (, / ; etc...)' unless spreadsheet_data.size > 0
       rescue Roo::HeaderRowNotFoundError => e
         missing_headers = []
 
@@ -73,8 +73,8 @@ module NtqExcelsior
           header_found = @required_columns.values.find do |column|
             transform_header_to_regexp(get_column_header(column)) == header_missing_regex
           end
-          if header_found && header_found.is_a?(Hash) && header_found[:humanized_header].present?
-            missing_headers << header_found[:humanized_header]
+          if header_found && header_found.is_a?(Hash)
+            missing_headers << header_found[:header].is_a?(String) ? header_found[:header] : (header_found[:humanized_header] || header_missing)
           elsif header_found&.is_a?(String)
             missing_headers << header_found
           else

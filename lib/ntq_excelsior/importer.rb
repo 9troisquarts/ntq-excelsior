@@ -64,7 +64,9 @@ module NtqExcelsior
     def spreadsheet_data
       begin
         spreadsheet_data = spreadsheet.sheet(spreadsheet.sheets[0]).parse(header_search: required_headers)
-        raise 'File is inconsistent, please check all headers of your file for specials characters (, / ; etc...)' unless spreadsheet_data.size > 0
+        raise 'File is inconsistent, please check you have data in it or check for invalid characters in headers like , / ; etc...' unless spreadsheet_data.size > 0
+
+        spreadsheet_data
       rescue Roo::HeaderRowNotFoundError => e
         missing_headers = []
 

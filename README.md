@@ -32,7 +32,8 @@ class UserExporter < NtqExcelsior::Exporter
       [
         {
           title: "Utilisateurs",
-          width: 4,
+          width: -> (context) { context[:current_user].can?(:access_to_email, User) ? 4 : 3 }
+          # width: 4,
           styles: [:bold]
         }
       ],
@@ -46,11 +47,13 @@ class UserExporter < NtqExcelsior::Exporter
       {
         title: 'Email',
         header_styles: [:blue],
-        resolve: 'email'
+        resolve: 'email',
+        visible: -> (record, context) { context[:current_user].can?(:access_to_email, User) }
       },
       {
         title: 'Birthdate',
-        resolve: 'birthdate'
+        resolve: 'birthdate',
+        visible: true # Optional
       }
       {
         title: 'Address (nested)',
@@ -71,6 +74,8 @@ class UserExporter < NtqExcelsior::Exporter
 end
 
 exporter = UserExporter.new(@users)
+# Optional : Context can be passed to exporter
+exporter.context = { current_user: current_user }
 stream = exporter.export.to_stream.read
 
 # In ruby file

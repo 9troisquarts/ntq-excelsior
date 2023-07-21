@@ -3,6 +3,7 @@ require 'caxlsx'
 module NtqExcelsior
   class Exporter
     attr_accessor :data
+    attr_accessor :context
 
     DEFAULT_STYLES = {
       date_format: {
@@ -91,13 +92,28 @@ module NtqExcelsior
       styles_hash
     end
 
+    def column_is_visible?(column, record = nil)
+      return true if !column.key?(:visible)
+      return column[:visible].call(record, context) if column[:visible].is_a?(Proc)
+
+      column[:visible]
+    end
+
+    def column_width(column)
+      return column[:width].call(context) if column[:width] && column[:width].is_a?(Proc)
+
+      column[:width] || 1
+    end
+
     def resolve_header_row(headers, index)
       row = { values: [], styles: [], merge_cells: [], height: nil }
       return row unless headers
-      
+
       col_index = 1
       headers.each do |header|
-        width = header[:width] || 1
+        next unless column_is_visible?(header)
+
+        width = column_width(header)
         row[:values] << header[:title] || ''
         row[:styles] << get_styles(header[:header_styles] || header[:styles])
         if width > 1
@@ -151,7 +167,9 @@ module NtqExcelsior
       row = { values: [], styles: [], merge_cells: [], height: nil, types: [] }
       col_index = 1
       schema.each do |column|
-        width = column[:width] || 1
+        next unless column_is_visible?(column, record)
+
+        width = column_width(header)
         formatted_value = format_value(column[:resolve], record)
         row[:values] << formatted_value[:value]
         row[:types] << (column[:type] || formatted_value[:type])
@@ -211,7 +229,7 @@ module NtqExcelsior
           end
         end
 
-        sheet.column_widths *content[:col_widths] if content[:col_widths].present?
+        sheet.column_widths * content[:col_widths] if content[:col_widths].present?
       end
 
       sheet

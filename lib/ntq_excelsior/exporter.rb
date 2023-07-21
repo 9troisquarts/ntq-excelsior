@@ -169,7 +169,7 @@ module NtqExcelsior
       schema.each do |column|
         next unless column_is_visible?(column, record)
 
-        width = column_width(header)
+        width = column_width(column)
         formatted_value = format_value(column[:resolve], record)
         row[:values] << formatted_value[:value]
         row[:types] << (column[:type] || formatted_value[:type])

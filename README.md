@@ -1,5 +1,7 @@
 # NtqExcelsior
 
+[![Maintainability](https://api.codeclimate.com/v1/badges/8bc43b15a0a8bfc5d660/maintainability)](https://codeclimate.com/github/9troisquarts/ntq-excelsior/maintainability)
+
 Ntq excelsior simplifie l'import et l'export de vos données.
 
 ## Installation

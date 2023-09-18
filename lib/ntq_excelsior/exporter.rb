@@ -132,6 +132,8 @@ module NtqExcelsior
       v = value
       return  v unless accessors && accessors.length > 0
 
+      return v.dig(*accessors) if v.is_a?(Hash)
+
       v = v.send(accessors[0])
       return v if accessors.length == 1
       return dig_value(v, accessors.slice(1..-1))

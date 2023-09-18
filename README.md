@@ -81,13 +81,32 @@ exporter.context = { current_user: current_user }
 stream = exporter.export.to_stream.read
 
 # In ruby file
-File.open("export.xlsx", "w") do |tpm|
-  tpm.binmode
-  tpm.write(stream)
+File.open("export.xlsx", "w") do |tmp|
+  tmp.binmode
+  tmp.write(stream)
 end
 
 # In Controller action
 send_data stream, type: 'application/xlsx', filename: "filename.xlsx"
+```
+
+### Multiple workbooks export
+
+```ruby
+  user_exporter = UserExporter.new(@user_data)
+  product_exporter = ProductExporter.new(@product_data)
+
+  exporter = NtqExcelsior::MultiWorkbookExporter.new([user_exporter, product_exporter])
+  stream = exporter.export.to_stream.read
+
+  # In ruby file
+  File.open("export.xlsx", "w") do |tmp|
+    tmp.binmode
+    tmp.write(stream)
+  end
+  
+  # In Controller action
+  send_data stream, type: 'application/xlsx', filename: "filename.xlsx"
 ```
 
 ### Import

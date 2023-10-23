@@ -76,7 +76,11 @@ module NtqExcelsior
             transform_header_to_regexp(get_column_header(column)) == header_missing_regex
           end
           if header_found && header_found.is_a?(Hash)
-            missing_headers << header_found[:header].is_a?(String) ? header_found[:header] : (header_found[:humanized_header] || header_missing)
+            if header_found[:header].is_a?(String)
+              missing_headers << header_found[:header]
+            else
+              missing_headers << (header_found[:humanized_header] || header_missing)
+            end
           elsif header_found&.is_a?(String)
             missing_headers << header_found
           else

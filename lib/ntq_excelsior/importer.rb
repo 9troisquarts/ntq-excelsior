@@ -70,7 +70,7 @@ module NtqExcelsior
       rescue Roo::HeaderRowNotFoundError => e
         missing_headers = []
 
-        e.message.slice(1..-1).chop.split(",").map(&:strip).each do |header_missing|
+        e.message.delete_prefix('[').delete_suffix(']').split(",").map(&:strip).each do |header_missing|
           header_missing_regex = transform_header_to_regexp(header_missing, true)
           header_found = @required_columns.values.find do |column|
             transform_header_to_regexp(get_column_header(column)) == header_missing_regex

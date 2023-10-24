@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ntq_excelsior (1.2.1)
+    ntq_excelsior (1.2.2)
       caxlsx (< 4)
       roo (< 3)
 

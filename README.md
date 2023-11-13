@@ -34,7 +34,7 @@ class UserExporter < NtqExcelsior::Exporter
       [
         {
           title: "Utilisateurs",
-          width: -> (context) { context[:current_user].can?(:access_to_email, User) ? 4 : 3 }
+          width: -> (context) { context[:current_user].can?(:access_to_email, User) ? 4 : 3 },
           # width: 4,
           styles: [:bold]
         }
@@ -96,8 +96,7 @@ send_data stream, type: 'application/xlsx', filename: "filename.xlsx"
   user_exporter = UserExporter.new(@user_data)
   product_exporter = ProductExporter.new(@product_data)
 
-  exporter = NtqExcelsior::MultiWorkbookExporter.new([user_exporter, product_exporter])
-  stream = exporter.export.to_stream.read
+  exporter = NtqExcelsior::MultiWorkbookExporter.new([export1, export2])
 
   # In ruby file
   File.open("export.xlsx", "w") do |tmp|

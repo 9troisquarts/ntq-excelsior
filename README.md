@@ -69,7 +69,25 @@ class UserExporter < NtqExcelsior::Exporter
         title: 'Age',
         resolve: 'age',
         type: :number
-      }
+      },
+      {
+        title: 'Civilité', 
+        list: ['M', 'Ms', 'Autres']
+      },
+      {
+        title: 'Active',
+        resolve: -> (record) { record.active ? 'Oui' : 'Non' }
+        # See axlsx example [here](https://github.com/caxlsx/caxlsx/blob/master/examples/list_validation_example.md) for more options
+        list: {
+          options: ['Oui', 'Non'],
+          show_error_message: true,
+          error_title: 'Active', # Optional
+          error: 'Authorized value: Oui non',
+          errorStyle: :stop, # :informations, :warning
+          showInputMessage: true,
+          prompt: 'Choose a value'
+        }
+      },
     ]
   })
 

@@ -61,7 +61,7 @@ module NtqExcelsior
       letters.reverse.map { |i| COLUMN_NAMES[i] }.join
     end
 
-    def cell_name(col, row, *lock)
+    def cell_name(col, row = nil, *lock)
       "#{lock.include?(:col) ? '$' : ''}#{column_name(col)}#{lock.include?(:row) ? '$' : ''}#{row}"
     end
 
@@ -116,13 +116,19 @@ module NtqExcelsior
         width = column_width(header)
         row[:values] << header[:title] || ''
         row[:styles] << get_styles(header[:header_styles] || header[:styles])
+        row[:data_validations] ||= []
+        if header[:list]
+          row[:data_validations].push({
+            range: cells_range([col_index, index + 1], [col_index, 1_000_000]),
+            config: list_data_validation_for_column(header[:list])
+          })
+        end
         if width > 1
           colspan = width - 1
           row[:values].push(*Array.new(colspan, nil))
           row[:merge_cells].push cells_range([col_index, index], [col_index + colspan, index])
           col_index += colspan
         end
-
         col_index += 1
       end
       row
@@ -188,6 +194,35 @@ module NtqExcelsior
       row
     end
 
+    def list_data_validation_for_column(list_config)
+      if list_config.is_a?(Array)
+        return {
+          type: :list,
+          formula1: "\"#{list_config.join(', ')}\""
+        }
+      end
+
+      config = {
+        type: :list,
+        formula1: "\"#{list_config[:options].join(', ')}\"",
+        showErrorMessage: list_config[:show_error_message] || false,
+        showInputMessage: list_config[:show_input_message] || false,
+      }
+
+      if list_config[:show_error_message]
+        config[:error] = list_config[:error] || ''
+        config[:errorStyle] = list_config[:error_style] || :stop
+        config[:errorTitle] = list_config[:error_title] || ''
+      end
+
+      if list_config[:show_input_message]
+        config[:promptTitle] = list_config[:prompt_title] || ''
+        config[:prompt] = list_config[:prompt] || ''
+      end
+
+      config
+    end
+
     def content
       content = { rows: [] }
       index = 0
@@ -213,6 +248,11 @@ module NtqExcelsior
           end
         end
         sheet.add_row row[:values], style: row_style, height: row[:height], types: row[:types]
+        if row[:data_validations]
+          row[:data_validations].each do |validation|
+            sheet.add_data_validation(validation[:range], validation[:config])
+          end
+        end
         if row[:merge_cells]
           row[:merge_cells]&.each do |range|
             sheet.merge_cells range

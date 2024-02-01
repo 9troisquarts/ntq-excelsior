@@ -77,7 +77,7 @@ class UserExporter < NtqExcelsior::Exporter
       {
         title: 'Active',
         resolve: -> (record) { record.active ? 'Oui' : 'Non' }
-        # See axlsx example [here](https://github.com/caxlsx/caxlsx/blob/master/examples/list_validation_example.md) for more options
+        # See axlsx example at https://github.com/caxlsx/caxlsx/blob/master/examples/list_validation_example.md for more options
         list: {
           options: ['Oui', 'Non'],
           show_error_message: true,

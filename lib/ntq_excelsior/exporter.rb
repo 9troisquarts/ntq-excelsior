@@ -4,6 +4,7 @@ module NtqExcelsior
   class Exporter
     attr_accessor :data
     attr_accessor :context
+    attr_accessor :progression_tracker
 
     DEFAULT_STYLES = {
       date_format: {
@@ -36,6 +37,7 @@ module NtqExcelsior
 
 		def initialize(data)
       @data = data
+      @data_count = data.size.to_d
     end
 
     def schema
@@ -232,15 +234,19 @@ module NtqExcelsior
       end
       index += 1
       content[:rows] << resolve_header_row(schema[:columns], index)
-      @data.each do |record|
+      @data.each_with_index do |record, index|
         index += 1
+        if progression_tracker&.is_a?(Proc)
+          at = ((((index + 1).to_d / @data_count) * 100.to_d) / 2).round(2)
+          progression_tracker.call(at) if at % 5 == 0
+        end
         content[:rows] << resolve_record_row(schema[:columns], record, index)
       end
       content
     end
 
     def add_sheet_content(content, wb_styles, sheet)
-      content[:rows].each do |row|
+      content[:rows].each_with_index do |row, index|
         row_style = []
         if row[:styles].is_a?(Array) && row[:styles].any?
           row[:styles].each do |style|
@@ -248,6 +254,10 @@ module NtqExcelsior
           end
         end
         sheet.add_row row[:values], style: row_style, height: row[:height], types: row[:types]
+        if progression_tracker&.is_a?(Proc)
+          at = 50 + ((((index + 1).to_d / @data_count) * 100.to_d) / 2).round(2)
+          progression_tracker.call(at) if at % 5 == 0 || index == content[:rows].length - 1
+        end
         if row[:data_validations]
           row[:data_validations].each do |validation|
             sheet.add_data_validation(validation[:range], validation[:config])

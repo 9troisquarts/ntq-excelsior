@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ntq_excelsior (1.4.0)
+    ntq_excelsior (1.4.2)
       caxlsx (< 4)
       roo (< 3)
 
@@ -18,6 +18,10 @@ GEM
     htmlentities (4.3.4)
     json (2.6.3)
     marcel (1.0.2)
+    mini_portile2 (2.8.7)
+    nokogiri (1.15.2)
+      mini_portile2 (~> 2.8.2)
+      racc (~> 1.4)
     nokogiri (1.15.2-arm64-darwin)
       racc (~> 1.4)
     parallel (1.23.0)
@@ -63,6 +67,7 @@ GEM
 
 PLATFORMS
   arm64-darwin-21
+  ruby
 
 DEPENDENCIES
   caxlsx (~> 3.2)

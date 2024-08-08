@@ -4,7 +4,7 @@ require 'ntq_excelsior/context'
 module NtqExcelsior
   class Importer
     attr_accessor :file, :check, :lines, :options, :status_tracker, :success
-    attr_reader :context
+    attr_accessor :context
 
     class << self
       def autosave(value = nil)

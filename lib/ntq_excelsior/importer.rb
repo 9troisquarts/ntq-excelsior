@@ -1,8 +1,10 @@
 require 'roo'
+require 'ntq_excelsior/context'
 
 module NtqExcelsior
   class Importer
-    attr_accessor :file, :check, :lines, :options, :status_tracker
+    attr_accessor :file, :check, :lines, :options, :status_tracker, :success
+    attr_reader :context
 
     class << self
       def autosave(value = nil)
@@ -29,6 +31,16 @@ module NtqExcelsior
         @schema ||= value
       end
 
+      def before(&block)
+        @before = block if block_given?
+        @before
+      end
+
+      def after(&block)
+        @after = block if block_given?
+        @after
+      end
+
       def max_error_count(value = nil)
         @max_error_count ||= value
       end
@@ -40,6 +52,10 @@ module NtqExcelsior
       def sample_file(value = nil)
         @sample_file ||= value
       end
+    end
+
+    def initialize
+      @context = NtqExcelsior::Context.new
     end
 
     def spreadsheet
@@ -134,7 +150,7 @@ module NtqExcelsior
     def lines
       return @lines if @lines
 
-      @lines = spreadsheet_data.map {|line| parse_line(line) }
+      @lines = spreadsheet_data.map { |line| parse_line(line) }
     end
 
     # id for default query in model
@@ -197,6 +213,7 @@ module NtqExcelsior
     end
 
     def import(save: true, status_tracker: nil)
+      self.class.before.call(@context, options) if self.class.before.is_a?(Proc)
       at = 0
       errors_lines = []
       success_count = 0
@@ -222,7 +239,10 @@ module NtqExcelsior
         end
       end
 
-      { success_count: success_count, not_found_count: not_found_count, errors: errors_lines }
+      import_stats = { success_count: success_count, not_found_count: not_found_count, errors: errors_lines }
+      @context.success = true if errors_lines.empty?
+      self.class.after.call(@context, options) if self.class.after.is_a?(Proc)
+      import_stats
     end
     
   private

@@ -52,6 +52,14 @@ module NtqExcelsior
       def sample_file(value = nil)
         @sample_file ||= value
       end
+
+      def title(value = nil)
+        @title ||= value
+      end
+
+      def description(value = nil)
+        @description ||= value
+      end
     end
 
     def initialize
@@ -119,6 +127,7 @@ module NtqExcelsior
 
         l.each do |parsed_header, _value|
           next unless parsed_header
+
           next unless (header.is_a?(Regexp) && parsed_header && parsed_header.match?(header)) || header.is_a?(String) && parsed_header == header
 
           l.delete(parsed_header)

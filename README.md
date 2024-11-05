@@ -171,8 +171,9 @@ class UserImporter < NtqExcelsior::Importer
     email: 'Email',
     first_name: /Prénom/i,
     last_name: {
-      header: /Nom/i,
-      required: true
+      header: /^Nom$/i,
+      required: true,
+      parser: ->(value) { value&.upcase }
     },
     active: {
       header: /Actif.+/i,

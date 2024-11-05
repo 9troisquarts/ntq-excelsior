@@ -1,10 +1,9 @@
-require 'roo'
-require 'ntq_excelsior/context'
+require "roo"
+require "ntq_excelsior/context"
 
 module NtqExcelsior
   class Importer
-    attr_accessor :file, :check, :lines, :options, :status_tracker, :success
-    attr_accessor :context
+    attr_accessor :file, :check, :lines, :options, :status_tracker, :success, :context
 
     class << self
       def autosave(value = nil)
@@ -69,7 +68,7 @@ module NtqExcelsior
     def spreadsheet
       return @spreadsheet unless @spreadsheet.nil?
 
-      raise 'File is missing' unless file.present?
+      raise "File is missing" unless file
 
       @spreadsheet = Roo::Spreadsheet.open(file, self.class.spreadsheet_options || {})
     end
@@ -77,8 +76,12 @@ module NtqExcelsior
     def required_headers
       return @required_headers if @required_headers
 
-      @required_columns = self.class.schema.select { |_field, column_config| !column_config.is_a?(Hash) || !column_config.key?(:required) || column_config[:required] }
-      @required_headers = @required_columns.values.map { |column| get_column_header(column) }.map { |header| transform_header_to_regexp(header) }
+      @required_columns = self.class.schema.select do |_field, column_config|
+        !column_config.is_a?(Hash) || !column_config.key?(:required) || column_config[:required]
+      end
+      @required_headers = @required_columns.values.map do |column|
+                            get_column_header(column)
+                          end.map { |header| transform_header_to_regexp(header) }
       if self.class.primary_key && !@required_columns.keys.include?(self.class.primary_key)
         @required_headers.unshift(Regexp.new(self.class.primary_key.to_s, "i"))
       end
@@ -86,37 +89,41 @@ module NtqExcelsior
     end
 
     def spreadsheet_data
-      begin
-        spreadsheet_data = spreadsheet.sheet(spreadsheet.sheets[0]).parse(header_search: required_headers)
-        raise 'File is inconsistent, please check you have data in it or check for invalid characters in headers like , / ; etc...' unless spreadsheet_data.size > 0
-
-        spreadsheet_data
-      rescue Roo::HeaderRowNotFoundError => e
-        missing_headers = []
-
-        e.message.delete_prefix('[').delete_suffix(']').split(",").map(&:strip).each do |header_missing|
-          header_missing_regex = transform_header_to_regexp(header_missing, true)
-          header_found = @required_columns.values.find do |column|
-            transform_header_to_regexp(get_column_header(column)) == header_missing_regex
-          end
-          if header_found && header_found.is_a?(Hash)
-            if header_found[:header].is_a?(String)
-              missing_headers << header_found[:header]
-            else
-              missing_headers << (header_found[:humanized_header] || header_missing)
-            end
-          elsif header_found&.is_a?(String)
-            missing_headers << header_found
-          else
-            missing_headers << header_missing
-          end
-        end
-        raise Roo::HeaderRowNotFoundError, missing_headers.join(", ")
+      spreadsheet_data = spreadsheet.sheet(spreadsheet.sheets[0]).parse(header_search: required_headers)
+      unless spreadsheet_data.size > 0
+        raise "File is inconsistent, please check you have data in it or check for invalid characters in headers like , / ; etc..."
       end
+
+      spreadsheet_data
+    rescue Roo::HeaderRowNotFoundError => e
+      missing_headers = []
+
+      e.message.delete_prefix("[").delete_suffix("]").split(",").map(&:strip).each do |header_missing|
+        header_missing_regex = transform_header_to_regexp(header_missing, true)
+        header_found = @required_columns.values.find do |column|
+          transform_header_to_regexp(get_column_header(column)) == header_missing_regex
+        end
+        missing_headers << if header_found && header_found.is_a?(Hash)
+                             if header_found[:header].is_a?(String)
+                               header_found[:header]
+                             else
+                               (header_found[:humanized_header] || header_missing)
+                             end
+                           elsif header_found&.is_a?(String)
+                             header_found
+                           else
+                             header_missing
+                           end
+      end
+      raise Roo::HeaderRowNotFoundError, missing_headers.join(", ")
     end
 
+    # Detect header scheme
+    # This method will detect the header scheme based on the schema
+    #
+    # return [Hash] header_scheme - Array<{ [spreadsheet_header]: schema_key }>
     def detect_header_scheme
-      return @header_scheme if @header_scheme
+      return @header_scheme if defined?(@header_scheme)
 
       @header_scheme = {}
       # Read the first line of file (not header)
@@ -124,33 +131,45 @@ module NtqExcelsior
 
       self.class.schema.each do |field, column_config|
         header = column_config.is_a?(Hash) ? column_config[:header] : column_config
-
         l.each do |parsed_header, _value|
           next unless parsed_header
 
-          next unless (header.is_a?(Regexp) && parsed_header && parsed_header.match?(header)) || header.is_a?(String) && parsed_header == header
+          unless header.is_a?(String) && parsed_header == header || (header.is_a?(Regexp) && parsed_header.respond_to?(:match?) && parsed_header.match?(header))
+            next
+          end
 
           l.delete(parsed_header)
           @header_scheme[parsed_header] = field
         end
       end
-      @header_scheme[self.class.primary_key.to_s] = self.class.primary_key.to_s if self.class.primary_key && !self.class.schema[self.class.primary_key.to_sym]
-
+      if self.class.primary_key && !self.class.schema[self.class.primary_key.to_sym]
+        @header_scheme[self.class.primary_key.to_s] =
+          self.class.primary_key.to_s
+      end
       @header_scheme
+    end
+
+    def schema_config_for_key(key)
+      self.class.schema[key.to_sym]
     end
 
     def parse_line(line)
       parsed_line = {}
+      header_scheme = detect_header_scheme
       line.each do |header, value|
-        header_scheme = detect_header_scheme
         if header.to_s == self.class.primary_key.to_s
           parsed_line[self.class.primary_key] = value
           next
         end
+      end
 
-        header_scheme.each do |header, field|
-          parsed_line[field.to_sym] = line[header]
+      header_scheme.each do |spreadsheet_header, schema_key|
+        header_config = schema_config_for_key(schema_key)
+        parsed_value = line[spreadsheet_header]
+        if header_config&.is_a?(Hash) && header_config[:parser].is_a?(Proc)
+          parsed_value = header_config[:parser].call(parsed_value)
         end
+        parsed_line[schema_key.to_sym] = parsed_value
       end
 
       parsed_line
@@ -167,14 +186,14 @@ module NtqExcelsior
     def find_or_initialize_record(line)
       return nil unless self.class.primary_key && self.class.model_klass
 
-      if line[self.class.primary_key.to_sym].present?
+      if line[self.class.primary_key.to_sym]
         if self.class.primary_key.to_sym == :id
           record = self.class.model_klass.constantize.find_by id: line[self.class.primary_key.to_sym]
         else
           record = self.class.model_klass.constantize.find_or_initialize_by("#{self.class.primary_key}": line[self.class.primary_key.to_sym])
         end
       end
-      record = self.class.model_klass.constantize.new unless record
+      record ||= self.class.model_klass.constantize.new
       record
     end
 
@@ -200,25 +219,23 @@ module NtqExcelsior
       @action = nil
       @errors = []
 
-      if (self.class.autoset)
-        record = set_record_fields(record, line)
-      end
+      record = set_record_fields(record, line) if self.class.autoset
 
       yield(record, line) if block_given?
 
-      if (self.class.autosave.nil? || self.class.autosave)
-        @action = record.persisted? ? 'update' : 'create'
-        if save
-          @success = record.save
-        else
-          @success = record.valid?
-        end
+      if self.class.autosave.nil? || self.class.autosave
+        @action = record.persisted? ? "update" : "create"
+        @success = if save
+                     record.save
+                   else
+                     record.valid?
+                   end
         @errors = record.errors.full_messages.concat(@errors) if record.errors.any?
       end
 
       return { status: :success, action: @action } if @success
 
-      return { status: :error, errors: @errors.join(", ") }
+      { status: :error, errors: @errors.join(", ") }
     end
 
     def import(save: true, status_tracker: nil)
@@ -237,13 +254,13 @@ module NtqExcelsior
         when :success
           success_count += 1
         when :error
-          error_line = line.map { |k, v| v }
+          error_line = line.map { |_k, v| v }
           error_line << result[:errors]
-          errors_lines.push(error_line) 
+          errors_lines.push(error_line)
         end
 
         if @status_tracker&.is_a?(Proc)
-          at = (((index + 1).to_d / lines.size) * 100.to_d) 
+          at = (((index + 1).to_d / lines.size) * 100.to_d)
           @status_tracker.call(at)
         end
       end
@@ -253,24 +270,23 @@ module NtqExcelsior
       self.class.after.call(@context, options) if self.class.after.is_a?(Proc)
       import_stats
     end
-    
-  private
-  
+
+    private
+
     def get_column_header(column)
       return column unless column.is_a?(Hash)
-  
+
       column[:header]
     end
-  
+
+    # This method transforms a header to a regexp and return the regexp if already one
     def transform_header_to_regexp(header, gsub_enclosure = false)
       return header unless header.is_a?(String)
 
-      if gsub_enclosure && header.scan(/^\/[\^]?([^(\$\/)]+)[\$]?\/[i]?$/i) && $1
-        header = $1
+      if gsub_enclosure && header.scan(%r{^/\^?([^($/)]+)\$?/i?$}i) && ::Regexp.last_match(1)
+        header = ::Regexp.last_match(1)
       end
       Regexp.new("^#{header}$", "i")
     end
-
   end
-
 end

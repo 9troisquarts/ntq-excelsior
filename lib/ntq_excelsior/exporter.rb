@@ -1,300 +1,134 @@
-require 'caxlsx'
+# frozen_string_literal: true
 
+require "caxlsx"
+require_relative "exporters/column"
+require_relative "exporters/cell_helper"
+require_relative "exporters/header"
+require_relative "exporters/worksheet_styles"
 module NtqExcelsior
+  # The Exporter class handles the generation of Excel files from data.
+  # It provides a flexible way to export data with customizable headers,
+  # styles, and data validation.
+  #
+  # @example Basic usage
+  #   data = [{ name: "John", age: 30 }, { name: "Jane", age: 25 }]
+  #   exporter = Exporter.new(data)
+  #   exporter.export
+  #
+  # @attr_accessor [Array] data The data to be exported
+  # @attr_accessor [Object] context Additional context for the export
+  # @attr_accessor [Proc] progression_tracker A proc to track export progress
   class Exporter
-    attr_accessor :data
-    attr_accessor :context
-    attr_accessor :progression_tracker
+    include Exporters::CellHelper
 
-    DEFAULT_STYLES = {
-      date_format: {
-        format_code: 'dd-mm-yyyy'
-      },
-      time_format: {
-        format_code: 'dd-mm-yyyy hh:mm:ss'
-      },
-      bold: {
-        b: true
-      },
-      italic: {
-        i: true
-      },
-      center: {
-        alignment: { wrap_text: true }
-      }
-    }
-
-    COLUMN_NAMES = Array('A'..'Z').freeze
+    attr_accessor :data, :context, :progression_tracker
 
     class << self
+      # Sets or gets the schema for the export
+      #
+      # @param value [Hash, Proc] The schema configuration or a proc that returns it
+      # @return [Hash, Proc] The current schema
       def schema(value = nil)
         @schema ||= value
       end
+
+      # Sets or gets the styles for the export
+      #
+      # @param value [Hash] The styles configuration
+      # @return [Hash] The current styles
       def styles(value = nil)
         @styles ||= value
       end
     end
 
-		def initialize(data)
+    # Initializes a new Exporter instance
+    #
+    # @param data [Array] The data to be exported
+    # @example
+    #   exporter = Exporter.new([{ name: "John", age: 30 }])
+    def initialize(data)
       @data = data
       @data_count = data.size.to_d
+      @worksheet_styles = worksheet_styles
     end
 
+    # Returns the schema for the export
+    #
+    # @return [Hash] The schema configuration
+    # @note If the schema is a Proc, it will be called with the context and data
     def schema
-      self.class.schema
+      @schema ||= begin
+        raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
+        raw_schema.merge(columns: columns)
+      end
     end
 
+    # Returns the columns for the export
+    #
+    # @return [Array<Column>] The column configurations
+    def columns
+      @columns ||= begin
+        raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
+        raw_schema[:columns].map { |col| Exporters::Column.new(col, worksheet_styles: worksheet_styles) }
+      end
+    end
+
+    # Returns the header manager
+    #
+    # @return [Header] The header manager instance
+    def header
+      offset_row = extra_headers.size + 1
+      @header ||= Exporters::Header.new(columns, offset_row, worksheet_styles: worksheet_styles.dup)
+    end
+
+    def extra_headers
+      return [] unless schema[:extra_headers].present?
+
+      schema[:extra_headers].map do |header, index|
+        columns = header.map { |col| Exporters::Column.new(col) }
+        NtqExcelsior::Exporters::Header.new(columns, index + 1, worksheet_styles: worksheet_styles.dup)
+      end
+    end
+
+    # Returns the styles configuration
+    #
+    # @return [Hash] The styles configuration
     def styles
       self.class.styles
     end
 
-    def column_name(col_index)
-      index = col_index - 1
-      return COLUMN_NAMES[index] if index < 26
+    def worksheet_styles
+      return @worksheet_styles if defined?(@worksheet_styles)
 
-      letters = []
-      letters << index % 26
-
-      while index >= 26 do
-        index = (index / 26) - 1
-        letters << index % 26
-      end
-
-      letters.reverse.map { |i| COLUMN_NAMES[i] }.join
+      @worksheet_styles = Exporters::WorksheetStyles.new(styles)
     end
 
-    def cell_name(col, row = nil, *lock)
-      "#{lock.include?(:col) ? '$' : ''}#{column_name(col)}#{lock.include?(:row) ? '$' : ''}#{row}"
-    end
-
-    def cells_range(starting = [], ending = [])
-      "#{cell_name(*starting)}:#{cell_name(*ending)}"
-    end
-
-    def number_of_headers_row(columns, count = 1)
-      columns_with_children = columns.select{ |c| c[:children] && c[:children].any? }
-      return count unless columns_with_children && columns_with_children.size > 0
-
-      columns_with_children.each do |column|
-        number_of_children = number_of_headers_row(column[:children], count += 1) 
-        count = number_of_children if number_of_children > count
-      end
-      count
-    end
-
-    def get_styles(row_styles, cell_styles = [])
-      row_styles ||= []
-      return {} if row_styles.length == 0 && cell_styles.length == 0
-
-      styles_hash = {}
-      stylesheet = styles || {}
-      (row_styles + cell_styles).each do |style_key|
-        styles_hash = styles_hash.merge(stylesheet[style_key] || DEFAULT_STYLES[style_key] || {})
-      end
-      styles_hash
-    end
-
-    def column_is_visible?(column, record = nil)
-      return true if !column.key?(:visible)
-      return column[:visible].call(record, context) if column[:visible].is_a?(Proc)
-
-      column[:visible]
-    end
-
-    def column_width(column)
-      return column[:width].call(context) if column[:width] && column[:width].is_a?(Proc)
-
-      column[:width] || 1
-    end
-
-    def resolve_header_row(headers, index)
-      row = { values: [], styles: [], merge_cells: [], height: nil }
-      return row unless headers
-
-      col_index = 1
-      headers.each do |header|
-        next unless column_is_visible?(header)
-
-        width = column_width(header)
-        row[:values] << header[:title] || ''
-        row[:styles] << get_styles(header[:header_styles] || header[:styles])
-        row[:data_validations] ||= []
-        if header[:list]
-          row[:data_validations].push({
-            range: cells_range([col_index, index + 1], [col_index, 1_000_000]),
-            config: list_data_validation_for_column(header[:list])
-          })
-        end
-        if width > 1
-          colspan = width - 1
-          row[:values].push(*Array.new(colspan, nil))
-          row[:merge_cells].push cells_range([col_index, index], [col_index + colspan, index])
-          col_index += colspan
-        end
-        col_index += 1
-      end
-      row
-    end
-
-    def dig_value(value, accessors = [])
-      v = value
-      return  v unless accessors && accessors.length > 0
-
-      return v.dig(*accessors) if v.is_a?(Hash)
-
-      v = v.send(accessors[0])
-      return v if accessors.length == 1
-      return dig_value(v, accessors.slice(1..-1))
-    end
-
-    def format_value(resolver, record)
-      styles = []
-      type = nil
-      if resolver.is_a?(Proc)
-        value = resolver.call(record) 
-      else
-        accessors = resolver
-        accessors = accessors.split(".") if accessors.is_a?(String)
-        value = dig_value(record, accessors)
-      end
-      if value.is_a?(String)
-        type = :string
-      end
-      if value.is_a?(Date)
-        value = value.strftime("%Y-%m-%d")
-        styles << :date_format
-        type = :date
-      end
-      if value.is_a?(Time) | value.is_a?(DateTime)
-        value = value.strftime("%Y-%m-%d %H:%M:%S")
-        styles << :time_format
-        type = :time
-      end
-      { value: value, styles: styles, type: type }
-    end
-
-    def resolve_record_row(schema, record, index)
-      row = { values: [], styles: [], merge_cells: [], height: nil, types: [] }
-      col_index = 1
-      schema.each do |column|
-        next unless column_is_visible?(column, record)
-
-        width = column_width(column)
-        formatted_value = format_value(column[:resolve], record)
-        row[:values] << formatted_value[:value]
-        row[:types] << (column[:type] || formatted_value[:type])
-        row[:styles] << get_styles(column[:styles], formatted_value[:styles])
-        if width > 1
-          colspan = width - 1
-          row[:values].push(*Array.new(colspan, nil))
-          row[:merge_cells].push cells_range([col_index, index], [col_index + colspan, index])
-          col_index += colspan
-        end
-
-        col_index += 1
-      end
-      row
-    end
-
+    # Creates data validation for a list of values
+    #
+    # @param list_config [Array, Hash] The list configuration
+    # @return [Hash] The data validation configuration
+    # @example Simple list
+    #   list_data_validation_for_column(["Yes", "No"])
+    # @example Complex list
+    #   list_data_validation_for_column({
+    #     options: ["Yes", "No"],
+    #     show_error_message: true,
+    #     error: "Invalid value"
+    #   })
     def list_data_validation_for_column(list_config)
-      if list_config.is_a?(Array)
-        return {
-          type: :list,
-          formula1: "\"#{list_config.join(', ')}\""
-        }
-      end
+      return simple_list_validation(list_config) if list_config.is_a?(Array)
 
-      config = {
-        type: :list,
-        formula1: "\"#{list_config[:options].join(', ')}\"",
-        showErrorMessage: list_config[:show_error_message] || false,
-        showInputMessage: list_config[:show_input_message] || false,
-      }
-
-      if list_config[:show_error_message]
-        config[:error] = list_config[:error] || ''
-        config[:errorStyle] = list_config[:error_style] || :stop
-        config[:errorTitle] = list_config[:error_title] || ''
-      end
-
-      if list_config[:show_input_message]
-        config[:promptTitle] = list_config[:prompt_title] || ''
-        config[:prompt] = list_config[:prompt] || ''
-      end
-
-      config
+      complex_list_validation(list_config)
     end
 
-    def content
-      content = { rows: [] }
-      index = 0
-      (schema[:extra_headers] || []).each_with_index do |header|
-        index += 1
-        content[:rows] << resolve_header_row(header, index)
-      end
-      index += 1
-      content[:rows] << resolve_header_row(schema[:columns], index)
-      @data.each_with_index do |record, index|
-        index += 1
-        if progression_tracker&.is_a?(Proc)
-          at = ((((index + 1).to_d / @data_count) * 100.to_d) / 2).round(2)
-          progression_tracker.call(at) if at % 5 == 0
-        end
-        content[:rows] << resolve_record_row(schema[:columns], record, index)
-      end
-      content
-    end
-
-    def add_sheet_content(content, wb_styles, sheet)
-      content[:rows].each_with_index do |row, index|
-        row_style = []
-        if row[:styles].is_a?(Array) && row[:styles].any?
-          row[:styles].each do |style|
-            row_style << wb_styles.add_style(style || {})
-          end
-        end
-        sheet.add_row row[:values], style: row_style, height: row[:height], types: row[:types]
-        if progression_tracker&.is_a?(Proc)
-          at = 50 + ((((index + 1).to_d / @data_count) * 100.to_d) / 2).round(2)
-          progression_tracker.call(at) if at % 5 == 0 || index == content[:rows].length - 1
-        end
-        if row[:data_validations]
-          row[:data_validations].each do |validation|
-            sheet.add_data_validation(validation[:range], validation[:config])
-          end
-        end
-        if row[:merge_cells]
-          row[:merge_cells]&.each do |range|
-            sheet.merge_cells range
-          end
-        end
-      end
-
-      # do not apply styles if there are no rows
-      if content[:rows].present?
-        content[:styles]&.each_with_index do |(range, sty), index|
-          begin
-            sheet.add_style range, sty.except(:border) if range && sty
-            sheet.add_border range, sty[:border] if range && sty && sty[:border]
-          rescue NoMethodError
-            # do not apply styles if error
-          end
-        end
-
-        sheet.column_widths * content[:col_widths] if content[:col_widths].present?
-      end
-
-      sheet
-    end
-
-    def generate_workbook(wb, wb_styles)
-      columns = schema[:columns]
-      wb.add_worksheet(name: schema[:name]) do |sheet|
-        add_sheet_content content, wb_styles, sheet
-      end
-    end
-
-		def export
+    # Exports the data to an Excel file
+    #
+    # @return [Axlsx::Package] The Excel package ready to be saved
+    # @example
+    #   exporter = Exporter.new(data)
+    #   package = exporter.export
+    #   package.serialize("output.xlsx")
+    def export
       package = Axlsx::Package.new
       wb = package.workbook
       wb_styles = wb.styles
@@ -304,5 +138,162 @@ module NtqExcelsior
       package
     end
 
-	end
+    private
+
+    # Resolves a header row configuration
+    #
+    # @param headers [Array<Hash>] The headers configuration
+    # @param index [Integer] The current row index
+    # @return [Array<Hash>] The resolved row configuration
+    def resolve_header_row(header)
+      return [{ values: [], styles: [], merge_cells: [], height: nil }] unless header
+
+      header.resolve_rows
+    end
+
+    # Extracts a nested value from an object using dot notation
+    #
+    # @param value [Object] The source object
+    # @param accessors [Array<String>] The path to the desired value
+    # @return [Object] The extracted value
+    def dig_value(value, accessors = [])
+      v = value
+      return v if accessors.empty?
+
+      return v.dig(*accessors) if v.is_a?(Hash)
+
+      v = v.send(accessors[0])
+      return v if accessors.length == 1
+
+      dig_value(v, accessors[1..-1])
+    end
+
+    # Resolves a record row configuration
+    #
+    # @param schema [Array<Hash>] The schema configuration
+    # @param record [Hash] The current record
+    # @param index [Integer] The current row index
+    # @return [Hash] The resolved row configuration
+    def resolve_record_row(_schema, record, index)
+      row = { values: [], styles: [], merge_cells: [], height: nil, types: [] }
+      col_index = 1
+
+      columns.each do |column|
+        result = column.process(record, index, col_index, context: context)
+        col_index = result[:next_col_index]
+
+        row[:values].concat(result[:values])
+        row[:types].concat(result[:types])
+        row[:styles].concat(result[:styles])
+        row[:merge_cells].concat(result[:merge_cells])
+      end
+
+      row
+    end
+
+    # Generates the content for the Excel sheet
+    #
+    # @return [Hash] The sheet content with rows and styles
+    def content
+      content = { rows: [] }
+      content[:rows].concat(extra_headers.map { |header| resolve_header_row(header) })
+      content[:rows].concat(resolve_header_row(header))
+      @data.each_with_index do |record, data_index|
+        current_index = data_index + 1
+        if progression_tracker.is_a?(Proc)
+          at = (((current_index.to_d / @data_count) * 100.to_d) / 2).round(2)
+          progression_tracker.call(at) if (at % 5).zero?
+        end
+        content[:rows] << resolve_record_row(columns, record, current_index)
+      end
+      content
+    end
+
+    # Adds content to an Excel worksheet
+    #
+    # @param content [Hash] The content to add
+    # @param wb_styles [Axlsx::Styles] The workbook styles
+    # @param sheet [Axlsx::Worksheet] The worksheet
+    # @return [Axlsx::Worksheet] The modified worksheet
+    def add_sheet_content(content, wb_styles, sheet)
+      content[:rows].each_with_index do |row, index|
+        row_style = []
+        puts row.inspect
+        if row[:styles].is_a?(Array) && row[:styles].any?
+          row[:styles].each do |style|
+            row_style << wb_styles.add_style(style || {})
+          end
+        end
+        sheet.add_row row[:values], style: row_style, height: row[:height], types: row[:types]
+        if progression_tracker.is_a?(Proc)
+          at = 50 + ((((index + 1).to_d / @data_count) * 100.to_d) / 2).round(2)
+          progression_tracker.call(at) if (at % 5).zero? || index == content[:rows].length - 1
+        end
+
+        row[:data_validations]&.each do |validation|
+          sheet.add_data_validation(validation[:range], validation[:config])
+        end
+
+        row[:merge_cells]&.each do |range|
+          sheet.merge_cells range
+        end
+      end
+
+      return sheet unless content[:rows].present?
+
+      content[:styles]&.each do |(range, sty)|
+        next unless range && sty
+
+        sheet.add_style range, sty.except(:border)
+        sheet.add_border range, sty[:border] if sty[:border]
+      rescue NoMethodError
+        next
+      end
+
+      sheet.column_widths * content[:col_widths] if content[:col_widths].present?
+      sheet
+    end
+
+    def generate_workbook(workbook, wb_styles)
+      workbook.add_worksheet(name: schema[:name]) do |sheet|
+        add_sheet_content content, wb_styles, sheet
+      end
+    end
+
+    def simple_list_validation(options)
+      {
+        type: :list,
+        formula1: "\"#{options.join(", ")}\""
+      }
+    end
+
+    def complex_list_validation(config)
+      validation = {
+        type: :list,
+        formula1: "\"#{config[:options].join(", ")}\"",
+        showErrorMessage: config[:show_error_message] || false,
+        showInputMessage: config[:show_input_message] || false
+      }
+
+      add_error_message_config(validation, config) if config[:show_error_message]
+      add_input_message_config(validation, config) if config[:show_input_message]
+
+      validation
+    end
+
+    def add_error_message_config(validation, config)
+      validation.merge!(
+        error: config[:error] || "",
+        errorStyle: config[:error_style] || :stop,
+        errorTitle: config[:error_title] || ""
+      )
+    end
+
+    def add_input_message_config(validation, config)
+      validation.merge!(
+        promptTitle: config[:prompt_title] || "",
+        prompt: config[:prompt] || ""
+      )
+    end
+  end
 end

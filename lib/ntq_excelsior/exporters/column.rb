@@ -1,17 +1,18 @@
 # frozen_string_literal: true
 
 require_relative "cell_helper"
-
+require_relative "list_helper"
 module NtqExcelsior
   module Exporters
     # Represents a column in the Excel export
     # Handles column definition, visibility, width, and value resolution
     class Column
       include CellHelper
+      include ListHelper
 
       attr_reader :title, :resolve, :styles, :type, :width, :visible, :children, :header_styles
 
-      attr_accessor :worksheet_styles
+      attr_accessor :worksheet_styles, :list
 
       # Initializes a new Column instance
       #
@@ -22,6 +23,7 @@ module NtqExcelsior
       # @option config [Symbol] :type The column data type
       # @option config [Integer, Proc] :width The column width
       # @option config [Boolean, Proc] :visible The column visibility
+      # @option config [Array<Symbol>] :list The list of values for data validation
       # @option config [Array<Hash>] :children Child columns for nested headers
       # @option config [Array<Symbol>] :header_styles Styles specific to the header
       def initialize(config, worksheet_styles: nil)
@@ -30,6 +32,7 @@ module NtqExcelsior
         @styles = config[:styles] || []
         @type = config[:type]
         @width = config[:width] || 1
+        @list = config[:list]
         @visible = config.key?(:visible) ? config[:visible] : true
         @children = config[:children]&.map { |child| self.class.new(child, worksheet_styles: worksheet_styles) }
         @header_styles = config[:header_styles] || config[:styles] || []
@@ -47,8 +50,8 @@ module NtqExcelsior
         @visible.call(record, context)
       end
 
-      def hidden?
-        !visible?
+      def hidden?(record = nil, context: nil)
+        !visible?(record, context: context)
       end
 
       # Gets the effective width of the column
@@ -59,6 +62,12 @@ module NtqExcelsior
         return @width.call(context) if @width.is_a?(Proc)
 
         @width
+      end
+
+      def validations
+        return [] unless @list
+
+        list_data_validation_for_column(@list)
       end
 
       # Formats a value according to its type and returns style information

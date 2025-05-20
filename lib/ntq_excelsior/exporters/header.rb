@@ -48,13 +48,13 @@ module NtqExcelsior
       # @example
       #   rows = header.resolve_rows
       #   # => [{ values: ["Name"], styles: [{ b: true }], merge_cells: [], height: nil }]
-      def resolve_rows
+      def resolve_rows(context: nil)
         return [empty_row] if columns.empty?
 
         max_depth = columns.map(&:depth).max || 1
         initial_rows = Array.new(max_depth) { empty_row }
 
-        normalize_rows(place_headers(initial_rows, max_depth))
+        normalize_rows(place_headers(initial_rows, max_depth, context: context))
       end
 
       private
@@ -67,6 +67,7 @@ module NtqExcelsior
           values: [],
           styles: [],
           merge_cells: [],
+          data_validations: [],
           height: nil
         }
       end
@@ -83,7 +84,8 @@ module NtqExcelsior
             values: pad_array(row[:values].dup, max_length, nil),
             styles: pad_array(row[:styles].dup, max_length, {}),
             merge_cells: row[:merge_cells].dup,
-            height: row[:height]
+            height: row[:height],
+            data_validations: row[:data_validations].dup
           }
         end
       end
@@ -105,9 +107,9 @@ module NtqExcelsior
       # @param rows [Array<Hash>] initial row configurations
       # @param depth [Integer] maximum depth of nested headers
       # @return [Array<Hash>] rows with headers placed
-      def place_headers(rows, depth)
+      def place_headers(rows, depth, context: nil)
         columns.reduce([0, rows]) do |(current_col, updated_rows), column|
-          next [current_col, updated_rows] unless column.visible?(context: nil)
+          next [current_col, updated_rows] unless column.visible?(context: context)
 
           result = place_header(column, current_col, 0, updated_rows, depth)
           [result[:next_col], result[:rows]]
@@ -140,7 +142,7 @@ module NtqExcelsior
       # @return [Hash] next column index and updated rows
       def place_parent_header(column, start_col, row, rows, depth)
         result = column.children.reduce([start_col, duplicate_rows(rows)]) do |(col, updated_rows), child|
-          next [col, updated_rows] unless child.visible?(context: nil)
+          next [col, updated_rows] unless child.visible?(context: context)
 
           result = place_header(child, col, row + 1, updated_rows, depth)
           [result[:next_col], result[:rows]]
@@ -168,7 +170,7 @@ module NtqExcelsior
       # @param depth [Integer] maximum depth of nested headers
       # @return [Hash] next column index and updated rows
       def place_leaf_header(column, start_col, row, rows, depth)
-        rows_with_cell = place_cell(column, start_col, row, rows)
+        rows_with_cell = place_cell(column, start_col, row, rows, validation: true)
         final_rows = row < depth - 1 ? merge_cells(rows_with_cell, row, start_col, depth - row, :leaf) : rows_with_cell
 
         { next_col: start_col + 1, rows: final_rows }
@@ -181,7 +183,7 @@ module NtqExcelsior
       # @param row [Integer] row index for the cell
       # @param rows [Array<Hash>] current row configurations
       # @return [Array<Hash>] updated rows with the new cell
-      def place_cell(column, col, row, rows)
+      def place_cell(column, col, row, rows, validation: false)
         new_rows = duplicate_rows(rows)
         new_rows[row] = empty_row if new_rows[row].nil?
         new_row = ensure_cell_space(new_rows[row], col)
@@ -190,6 +192,17 @@ module NtqExcelsior
           values: new_row[:values].dup.tap { |v| v[col] = column.title || "" },
           styles: new_row[:styles].dup.tap { |s| s[col] = get_styles(column.header_styles) }
         )
+
+        if validation && column.list
+          # + 1 on row because we want to start from the next, which is not a header
+          range = cells_range([col + 1, row + 1], [col + 1, 1_000_000])
+          new_row = new_row.merge(
+            data_validations: new_row[:data_validations] + [{
+              range: range,
+              config: column.validations
+            }]
+          )
+        end
 
         new_rows.dup.tap { |r| r[row] = new_row }
       end
@@ -266,7 +279,8 @@ module NtqExcelsior
           values: ensure_size(base_row[:values]&.dup || [], col + 1, nil),
           styles: ensure_size(base_row[:styles]&.dup || [], col + 1, {}),
           merge_cells: base_row[:merge_cells]&.dup || [],
-          height: base_row[:height]
+          height: base_row[:height],
+          data_validations: base_row[:data_validations]&.dup || []
         }
       end
 

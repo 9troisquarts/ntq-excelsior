@@ -57,20 +57,20 @@ module NtqExcelsior
     # @return [Hash] The schema configuration
     # @note If the schema is a Proc, it will be called with the context and data
     def schema
-      @schema ||= begin
-        raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
-        raw_schema.merge(columns: columns)
-      end
+      return @schema if defined?(@schema)
+
+      raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
+      @schema = raw_schema.merge(columns: columns)
     end
 
     # Returns the columns for the export
     #
     # @return [Array<Column>] The column configurations
     def columns
-      @columns ||= begin
-        raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
-        raw_schema[:columns].map { |col| Exporters::Column.new(col, worksheet_styles: worksheet_styles) }
-      end
+      return @columns if defined?(@columns)
+
+      raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
+      @columns = raw_schema[:columns].map { |col| Exporters::Column.new(col, worksheet_styles: worksheet_styles) }
     end
 
     # Returns the header manager
@@ -86,7 +86,8 @@ module NtqExcelsior
 
       schema[:extra_headers].map do |header, index|
         columns = header.map { |col| Exporters::Column.new(col) }
-        NtqExcelsior::Exporters::Header.new(columns, index + 1, worksheet_styles: worksheet_styles.dup)
+        NtqExcelsior::Exporters::Header.new(columns, index + 1, worksheet_styles: worksheet_styles.dup,
+                                                                context: context)
       end
     end
 
@@ -101,24 +102,6 @@ module NtqExcelsior
       return @worksheet_styles if defined?(@worksheet_styles)
 
       @worksheet_styles = Exporters::WorksheetStyles.new(styles)
-    end
-
-    # Creates data validation for a list of values
-    #
-    # @param list_config [Array, Hash] The list configuration
-    # @return [Hash] The data validation configuration
-    # @example Simple list
-    #   list_data_validation_for_column(["Yes", "No"])
-    # @example Complex list
-    #   list_data_validation_for_column({
-    #     options: ["Yes", "No"],
-    #     show_error_message: true,
-    #     error: "Invalid value"
-    #   })
-    def list_data_validation_for_column(list_config)
-      return simple_list_validation(list_config) if list_config.is_a?(Array)
-
-      complex_list_validation(list_config)
     end
 
     # Exports the data to an Excel file
@@ -148,7 +131,7 @@ module NtqExcelsior
     def resolve_header_row(header)
       return [{ values: [], styles: [], merge_cells: [], height: nil }] unless header
 
-      header.resolve_rows
+      header.resolve_rows(context: context)
     end
 
     # Extracts a nested value from an object using dot notation
@@ -258,42 +241,6 @@ module NtqExcelsior
       workbook.add_worksheet(name: schema[:name]) do |sheet|
         add_sheet_content content, wb_styles, sheet
       end
-    end
-
-    def simple_list_validation(options)
-      {
-        type: :list,
-        formula1: "\"#{options.join(", ")}\""
-      }
-    end
-
-    def complex_list_validation(config)
-      validation = {
-        type: :list,
-        formula1: "\"#{config[:options].join(", ")}\"",
-        showErrorMessage: config[:show_error_message] || false,
-        showInputMessage: config[:show_input_message] || false
-      }
-
-      add_error_message_config(validation, config) if config[:show_error_message]
-      add_input_message_config(validation, config) if config[:show_input_message]
-
-      validation
-    end
-
-    def add_error_message_config(validation, config)
-      validation.merge!(
-        error: config[:error] || "",
-        errorStyle: config[:error_style] || :stop,
-        errorTitle: config[:error_title] || ""
-      )
-    end
-
-    def add_input_message_config(validation, config)
-      validation.merge!(
-        promptTitle: config[:prompt_title] || "",
-        prompt: config[:prompt] || ""
-      )
     end
   end
 end

@@ -18,36 +18,39 @@ module NtqExcelsior
     class Header
       include CellHelper
 
-      # The columns used to generate headers
-      # @return [Array<Column>] array of column definitions
-      attr_reader :columns
+      # Structure d'une ligne vide utilisée comme base pour toutes les lignes
+      # Contient les tableaux et propriétés nécessaires pour une ligne Excel
+      EMPTY_ROW = {
+        values: [],           # Valeurs des cellules
+        styles: [],           # Styles appliqués aux cellules
+        merge_cells: [],      # Cellules à fusionner
+        data_validations: [], # Validations de données
+        height: nil           # Hauteur de la ligne
+      }.freeze
 
-      # The worksheet styles
-      # @return [WorksheetStyles] the worksheet styles
-      attr_reader :worksheet_styles
+      # Attributs de la classe
+      # @columns: Définition des colonnes à générer
+      # @worksheet_styles: Styles disponibles pour le worksheet
+      # @offset_row: Décalage en nombre de lignes pour le placement des headers
+      attr_reader :columns, :worksheet_styles, :offset_row
 
-      # The row offset for header placement
-      # @return [Integer] number of rows to offset header placement
-      attr_reader :offset_row
-
-      # Creates a new Header instance
-      #
-      # @param columns [Array<Column>] the columns to generate headers from
-      # @param offset_row [Integer] the row offset for header placement (default: 0)
-      # @example
-      #   header = Header.new([Column.new(title: "Name")], { bold: { b: true } })
+      # Initialise une nouvelle instance de Header
+      # @param columns [Array<Column>] Les colonnes à partir desquelles générer les headers
+      # @param offset_row [Integer] Décalage en nombre de lignes (défaut: 1)
+      # @param worksheet_styles [WorksheetStyles] Styles disponibles pour le worksheet
       def initialize(columns, offset_row = 1, worksheet_styles: nil)
+        raise ArgumentError, "columns must be an Array" unless columns.is_a?(Array)
+        raise ArgumentError, "offset_row must be a positive integer" unless offset_row.is_a?(Integer) && offset_row >= 0
+
         @columns = columns
         @offset_row = offset_row
         @worksheet_styles = worksheet_styles
       end
 
-      # Resolves header rows configuration
-      #
-      # @return [Array<Hash>] array of row configurations, each containing :values, :styles, :merge_cells, and :height
-      # @example
-      #   rows = header.resolve_rows
-      #   # => [{ values: ["Name"], styles: [{ b: true }], merge_cells: [], height: nil }]
+      # Résout la configuration des lignes d'en-tête
+      # Génère la structure complète des headers en tenant compte de la profondeur et du contexte
+      # @param context [Object] Contexte optionnel pour la visibilité des colonnes
+      # @return [Array<Hash>] Configuration des lignes d'en-tête
       def resolve_rows(context: nil)
         return [empty_row] if columns.empty?
 
@@ -59,98 +62,85 @@ module NtqExcelsior
 
       private
 
-      # Creates an empty row structure
-      #
-      # @return [Hash] empty row with initialized arrays for values, styles, and merge_cells
+      # Méthodes de base pour la création de structures
+
+      # Crée une nouvelle ligne vide basée sur EMPTY_ROW
+      # @return [Hash] Nouvelle ligne vide
       def empty_row
-        {
-          values: [],
-          styles: [],
-          merge_cells: [],
-          data_validations: [],
-          height: nil
-        }
+        EMPTY_ROW.dup
       end
 
-      # Normalizes row lengths to ensure all rows have the same number of columns
-      #
-      # @param rows [Array<Hash>] array of row configurations to normalize
-      # @return [Array<Hash>] normalized rows with equal column counts
-      def normalize_rows(rows)
-        max_length = rows.map { |row| row[:values].length }.max
+      # Duplique un ensemble de lignes en créant de nouvelles instances
+      # @param rows [Array<Hash>] Lignes à dupliquer
+      # @return [Array<Hash>] Nouvelles instances des lignes
+      def duplicate_rows(rows)
+        rows.map do |r|
+          next empty_row unless r
 
-        rows.map do |row|
           {
-            values: pad_array(row[:values].dup, max_length, nil),
-            styles: pad_array(row[:styles].dup, max_length, {}),
-            merge_cells: row[:merge_cells].dup,
-            height: row[:height],
-            data_validations: row[:data_validations].dup
+            values: r[:values]&.dup || [],
+            styles: r[:styles]&.dup || [],
+            merge_cells: r[:merge_cells]&.dup || [],
+            data_validations: r[:data_validations]&.dup || [],
+            height: r[:height]
           }
         end
       end
 
-      # Pads an array to a specified length with a default value
-      #
-      # @param array [Array] the array to pad
-      # @param length [Integer] the desired length
-      # @param value [Object] the value to use for padding
-      # @return [Array] padded array of specified length
-      def pad_array(array, length, value)
-        return array if array.length >= length
+      # Méthodes de placement des headers
 
-        array + Array.new(length - array.length, value)
-      end
-
-      # Places headers in the rows structure
-      #
-      # @param rows [Array<Hash>] initial row configurations
-      # @param depth [Integer] maximum depth of nested headers
-      # @return [Array<Hash>] rows with headers placed
+      # Place tous les headers dans la structure de lignes
+      # @param rows [Array<Hash>] Configuration initiale des lignes
+      # @param depth [Integer] Profondeur maximale des headers imbriqués
+      # @param context [Object] Contexte pour la visibilité des colonnes
+      # @return [Array<Hash>] Lignes avec les headers placés
       def place_headers(rows, depth, context: nil)
-        columns.reduce([0, rows]) do |(current_col, updated_rows), column|
-          next [current_col, updated_rows] unless column.visible?(context: context)
-
-          result = place_header(column, current_col, 0, updated_rows, depth)
-          [result[:next_col], result[:rows]]
-        end.last
+        columns.reduce({ next_col: 0, rows: rows }) do |acc, column|
+          result = place_header(column, acc[:next_col], 0, acc[:rows], depth, context: context)
+          { next_col: result[:next_col], rows: result[:rows] }
+        end[:rows]
       end
 
-      # Places a single header in the rows structure
-      #
-      # @param column [Column] the column to place
-      # @param start_col [Integer] starting column index
-      # @param row [Integer] row index
-      # @param rows [Array<Hash>] current row configurations
-      # @param depth [Integer] maximum depth of nested headers
-      # @return [Hash] next column index and updated rows
-      def place_header(column, start_col, row, rows, depth)
+      # Place un header individuel dans la structure
+      # Gère la visibilité et le type de header (parent ou feuille)
+      # @param column [Column] Colonne à placer
+      # @param start_col [Integer] Index de colonne de départ
+      # @param row [Integer] Index de ligne
+      # @param rows [Array<Hash>] Configuration actuelle des lignes
+      # @param depth [Integer] Profondeur maximale
+      # @param context [Object] Contexte pour la visibilité
+      # @return [Hash] Prochaine colonne et lignes mises à jour
+      def place_header(column, start_col, row, rows, depth, context: nil)
+        return { next_col: start_col, rows: rows } unless column.visible?(context: context)
+
         if column.has_children?
-          place_parent_header(column, start_col, row, rows, depth)
+          place_parent_header(column, start_col, row, rows, depth, context: context)
         else
           place_leaf_header(column, start_col, row, rows, depth)
         end
       end
 
-      # Places a parent header with its children
-      #
-      # @param column [Column] the parent column
-      # @param start_col [Integer] starting column index
-      # @param row [Integer] row index
-      # @param rows [Array<Hash>] current row configurations
-      # @param depth [Integer] maximum depth of nested headers
-      # @return [Hash] next column index and updated rows
-      def place_parent_header(column, start_col, row, rows, depth)
-        result = column.children.reduce([start_col, duplicate_rows(rows)]) do |(col, updated_rows), child|
-          next [col, updated_rows] unless child.visible?(context: context)
-
-          result = place_header(child, col, row + 1, updated_rows, depth)
-          [result[:next_col], result[:rows]]
+      # Place un header parent avec ses enfants
+      # Gère la fusion des cellules pour les headers parents
+      # @param column [Column] Colonne parent
+      # @param start_col [Integer] Index de colonne de départ
+      # @param row [Integer] Index de ligne
+      # @param rows [Array<Hash>] Configuration actuelle des lignes
+      # @param depth [Integer] Profondeur maximale
+      # @param context [Object] Contexte pour la visibilité
+      # @return [Hash] Prochaine colonne et lignes mises à jour
+      def place_parent_header(column, start_col, row, rows, depth, context: nil)
+        # Place d'abord les enfants
+        result = column.children.reduce({ next_col: start_col, rows: rows }) do |acc, child|
+          result = place_header(child, acc[:next_col], row + 1, acc[:rows], depth, context: context)
+          { next_col: result[:next_col], rows: result[:rows] }
         end
 
-        child_start_col, rows_with_children = result
+        child_start_col = result[:next_col]
+        rows_with_children = result[:rows]
         current_width = child_start_col - start_col
 
+        # Place le header parent et fusionne les cellules si nécessaire
         rows_with_cell = place_cell(column, start_col, row, rows_with_children)
         final_rows = if current_width > 1
                        merge_cells(rows_with_cell, row, start_col, current_width, :parent)
@@ -161,14 +151,14 @@ module NtqExcelsior
         { next_col: child_start_col, rows: final_rows }
       end
 
-      # Places a leaf header (header without children)
-      #
-      # @param column [Column] the leaf column
-      # @param start_col [Integer] starting column index
-      # @param row [Integer] row index
-      # @param rows [Array<Hash>] current row configurations
-      # @param depth [Integer] maximum depth of nested headers
-      # @return [Hash] next column index and updated rows
+      # Place un header feuille (sans enfants)
+      # Gère la fusion verticale des cellules si nécessaire
+      # @param column [Column] Colonne feuille
+      # @param start_col [Integer] Index de colonne de départ
+      # @param row [Integer] Index de ligne
+      # @param rows [Array<Hash>] Configuration actuelle des lignes
+      # @param depth [Integer] Profondeur maximale
+      # @return [Hash] Prochaine colonne et lignes mises à jour
       def place_leaf_header(column, start_col, row, rows, depth)
         rows_with_cell = place_cell(column, start_col, row, rows, validation: true)
         final_rows = row < depth - 1 ? merge_cells(rows_with_cell, row, start_col, depth - row, :leaf) : rows_with_cell
@@ -176,48 +166,51 @@ module NtqExcelsior
         { next_col: start_col + 1, rows: final_rows }
       end
 
-      # Places a header cell value and its styles
-      #
-      # @param column [Column] the column containing the header information
-      # @param start_col [Integer] column index for the cell
-      # @param row [Integer] row index for the cell
-      # @param rows [Array<Hash>] current row configurations
-      # @return [Array<Hash>] updated rows with the new cell
+      # Méthodes de manipulation des cellules
+
+      # Place une cellule d'en-tête avec sa valeur et ses styles
+      # @param column [Column] Colonne contenant les informations d'en-tête
+      # @param col [Integer] Index de colonne
+      # @param row [Integer] Index de ligne
+      # @param rows [Array<Hash>] Configuration actuelle des lignes
+      # @param validation [Boolean] Si true, ajoute les validations de données
+      # @return [Array<Hash>] Lignes mises à jour avec la nouvelle cellule
       def place_cell(column, col, row, rows, validation: false)
-        new_rows = duplicate_rows(rows)
-        new_rows[row] = empty_row if new_rows[row].nil?
+        new_rows = rows.dup
+        new_rows[row] ||= empty_row
         new_row = ensure_cell_space(new_rows[row], col)
 
-        new_row = new_row.merge(
-          values: new_row[:values].dup.tap { |v| v[col] = column.title || "" },
-          styles: new_row[:styles].dup.tap { |s| s[col] = get_styles(column.header_styles) }
-        )
+        # Place la valeur et les styles
+        new_row[:values][col] = column.title || ""
+        new_row[:styles][col] = get_styles(column.header_styles)
 
+        # Ajoute les validations si nécessaire
         if validation && column.list
-          # + 1 on row because we want to start from the next, which is not a header
           range = cells_range([col + 1, row + 1], [col + 1, 1_000_000])
-          new_row = new_row.merge(
-            data_validations: new_row[:data_validations] + [{
-              range: range,
-              config: column.validations
-            }]
-          )
+          new_row[:data_validations] << {
+            range: range,
+            config: column.validations
+          }
         end
 
-        new_rows.dup.tap { |r| r[row] = new_row }
+        new_rows[row] = new_row
+        new_rows
       end
 
-      # Merges cells for a parent header
-      #
-      # @param rows [Array<Hash>] current row configurations
-      # @param row [Integer] row index
-      # @param start_col [Integer] starting column index
-      # @param width [Integer] number of columns to merge
-      # @return [Array<Hash>] updated rows with merge information
+      # Fusionne des cellules pour un header
+      # @param rows [Array<Hash>] Configuration actuelle des lignes
+      # @param row [Integer] Index de ligne
+      # @param start_col [Integer] Index de colonne de départ
+      # @param span [Integer] Nombre de cellules à fusionner
+      # @param type [Symbol] Type de fusion (:parent pour horizontal, :leaf pour vertical)
+      # @return [Array<Hash>] Lignes mises à jour avec les fusions
       def merge_cells(rows, row, start_col, span, type)
-        new_rows = duplicate_rows(rows)
-        new_rows[row] = empty_row if new_rows[row].nil?
-        new_row = ensure_merge_space(new_rows[row], start_col, span)
+        return rows if span <= 1
+
+        new_rows = rows.dup
+        new_rows[row] ||= empty_row
+
+        # Détermine la plage de fusion selon le type
         merge_range = case type
                       when :parent
                         cells_range([start_col + 1, offset_row + row], [start_col + span, offset_row + row])
@@ -225,79 +218,23 @@ module NtqExcelsior
                         cells_range([start_col + 1, offset_row + row], [start_col + 1, offset_row + row + span - 1])
                       end
 
-        new_row = new_row.merge(
-          merge_cells: new_row[:merge_cells] + [merge_range]
-        )
-
-        cleared_rows = clear_merged_cells(new_rows, row, start_col, span, type)
-        cleared_rows.dup.tap { |r| r[row] = new_row }
+        new_rows[row][:merge_cells] << merge_range
+        clear_merged_cells(new_rows, row, start_col, span, type)
       end
 
-      # Gets the combined styles for a header
-      #
-      # @param styles [Array<Symbol>] style keys to apply
-      # @return [Hash] combined style definitions
-      def get_styles(styles)
-        styles ||= []
-        return {} if styles.empty? || !worksheet_styles
-
-        styles.reduce({}) do |styles_hash, style_key|
-          styles_hash.merge(worksheet_styles.get_style(style_key))
-        end
-      end
-
-      # Ensures an array has at least the specified size
-      #
-      # @param array [Array] the array to resize
-      # @param size [Integer] minimum required size
-      # @param default_value [Object] value to use for new elements
-      # @return [Array] array with at least the specified size
-      def ensure_size(array, size, default_value)
-        return array if array.size >= size
-
-        array + Array.new(size - array.size, default_value)
-      end
-
-      # Ensures rows array has at least the specified size
-      #
-      # @param rows [Array<Hash>] current rows array
-      # @param min_size [Integer] minimum required size
-      # @return [Array<Hash>] array with at least the specified number of rows
-      def ensure_rows(rows, min_size)
-        return rows if rows.size >= min_size
-
-        rows + Array.new(min_size - rows.size) { empty_row }
-      end
-
-      def duplicate_rows(rows)
-        rows.map { |r| r&.transform_values(&:dup) || empty_row }
-      end
-
-      def ensure_cell_space(row, col)
-        base_row = row || empty_row
-        {
-          values: ensure_size(base_row[:values]&.dup || [], col + 1, nil),
-          styles: ensure_size(base_row[:styles]&.dup || [], col + 1, {}),
-          merge_cells: base_row[:merge_cells]&.dup || [],
-          height: base_row[:height],
-          data_validations: base_row[:data_validations]&.dup || []
-        }
-      end
-
-      def ensure_merge_space(row, start_col, span)
-        size = case span
-               when Integer then start_col + span
-               when Range then span.end
-               end
-
-        ensure_cell_space(row, size)
-      end
-
+      # Efface le contenu et les styles des cellules qui seront fusionnées
+      # @param rows [Array<Hash>] Configuration actuelle des lignes
+      # @param row [Integer] Index de ligne de départ
+      # @param start_col [Integer] Index de colonne de départ
+      # @param span [Integer] Nombre de cellules à effacer
+      # @param type [Symbol] Type de fusion (:parent ou :leaf)
+      # @return [Array<Hash>] Lignes mises à jour avec les cellules effacées
       def clear_merged_cells(rows, row, start_col, span, type)
         new_rows = duplicate_rows(rows)
 
         case type
         when :parent
+          # Efface les cellules horizontalement
           new_row = new_rows[row] || empty_row
           new_values = new_row[:values]&.dup || []
           new_styles = new_row[:styles]&.dup || []
@@ -309,6 +246,7 @@ module NtqExcelsior
 
           new_rows[row] = new_row.merge(values: new_values, styles: new_styles)
         when :leaf
+          # Efface les cellules verticalement
           ((row + 1)...(row + span)).each do |r|
             new_rows[r] = empty_row if new_rows[r].nil?
             new_row = new_rows[r]
@@ -323,6 +261,96 @@ module NtqExcelsior
         end
 
         new_rows
+      end
+
+      # Méthodes utilitaires
+
+      # Normalise la longueur des lignes pour assurer un nombre égal de colonnes
+      # @param rows [Array<Hash>] Lignes à normaliser
+      # @return [Array<Hash>] Lignes normalisées
+      def normalize_rows(rows)
+        max_length = rows.map { |row| row[:values].length }.max
+
+        rows.map! do |row|
+          row[:values] = pad_array(row[:values], max_length, nil)
+          row[:styles] = pad_array(row[:styles], max_length, {})
+          row
+        end
+      end
+
+      # Complète un tableau jusqu'à une longueur spécifiée
+      # @param array [Array] Tableau à compléter
+      # @param length [Integer] Longueur souhaitée
+      # @param value [Object] Valeur de remplissage
+      # @return [Array] Tableau complété
+      def pad_array(array, length, value)
+        return array if array.length >= length
+
+        array.fill(value, array.length...length)
+        array
+      end
+
+      # Assure qu'une ligne a assez d'espace pour une cellule
+      # @param row [Hash] Ligne à modifier
+      # @param col [Integer] Index de colonne
+      # @return [Hash] Ligne mise à jour
+      def ensure_cell_space(row, col)
+        base_row = row || empty_row
+
+        base_row[:values] = ensure_size(base_row[:values], col + 1, nil)
+        base_row[:styles] = ensure_size(base_row[:styles], col + 1, {})
+
+        base_row
+      end
+
+      # Assure qu'une ligne a assez d'espace pour une fusion
+      # @param row [Hash] Ligne à modifier
+      # @param start_col [Integer] Index de colonne de départ
+      # @param span [Integer, Range] Étendue de la fusion
+      # @return [Hash] Ligne mise à jour
+      def ensure_merge_space(row, start_col, span)
+        size = case span
+               when Integer then start_col + span
+               when Range then span.end
+               end
+
+        ensure_cell_space(row, size)
+      end
+
+      # Assure qu'un tableau a au moins une taille spécifiée
+      # @param array [Array] Tableau à modifier
+      # @param size [Integer] Taille minimale requise
+      # @param default_value [Object] Valeur par défaut
+      # @return [Array] Tableau mis à jour
+      def ensure_size(array, size, default_value)
+        return array if array.size >= size
+
+        array + Array.new(size - array.size, default_value)
+      end
+
+      # Assure qu'un tableau de lignes a au moins une taille spécifiée
+      # @param rows [Array<Hash>] Tableau de lignes
+      # @param min_size [Integer] Taille minimale requise
+      # @return [Array<Hash>] Tableau de lignes mis à jour
+      def ensure_rows(rows, min_size)
+        return rows if rows.size >= min_size
+
+        rows + Array.new(min_size - rows.size) { empty_row }
+      end
+
+      # Obtient les styles combinés pour un header
+      # Utilise un cache pour éviter de recalculer les styles
+      # @param styles [Array<Symbol>] Clés de style à appliquer
+      # @return [Hash] Styles combinés
+      def get_styles(styles)
+        return {} if styles.nil? || styles.empty? || !worksheet_styles
+
+        @style_cache ||= {}
+        cache_key = styles.hash
+
+        @style_cache[cache_key] ||= styles.reduce({}) do |styles_hash, style_key|
+          styles_hash.merge(worksheet_styles.get_style(style_key))
+        end
       end
     end
   end

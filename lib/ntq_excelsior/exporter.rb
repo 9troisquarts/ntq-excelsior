@@ -201,7 +201,6 @@ module NtqExcelsior
     def add_sheet_content(content, wb_styles, sheet)
       content[:rows].each_with_index do |row, index|
         row_style = []
-        puts row.inspect
         if row[:styles].is_a?(Array) && row[:styles].any?
           row[:styles].each do |style|
             row_style << wb_styles.add_style(style || {})

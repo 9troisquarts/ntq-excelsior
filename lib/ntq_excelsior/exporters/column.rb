@@ -74,10 +74,10 @@ module NtqExcelsior
       #
       # @param record [Hash] The data record
       # @return [Hash] The formatted value with style information
-      def format_value(record)
+      def format_value(record, context = nil)
         styles = []
         type = nil
-        value = resolve_value(record) || ""
+        value = resolve_value(record, context) || ""
         type = :string if value.is_a?(String)
         if value.is_a?(Date)
           value = value.strftime("%Y-%m-%d")
@@ -167,7 +167,7 @@ module NtqExcelsior
       # @return [Hash] The processed single column data
       def process_single(record, index, col_index, context)
         width = effective_width(context)
-        formatted_value = format_value(record)
+        formatted_value = format_value(record, context)
         result = {
           values: [formatted_value[:value]],
           types: [@type || formatted_value[:type]],
@@ -206,9 +206,9 @@ module NtqExcelsior
       #
       # @param record [Hash] The data record
       # @return [Object] The resolved value
-      def resolve_value(record)
+      def resolve_value(record, context = nil)
         if @resolve.is_a?(Proc)
-          @resolve.call(record)
+          @resolve.call(record, context)
         else
           accessors = @resolve
           accessors = accessors.split(".") if accessors.is_a?(String)

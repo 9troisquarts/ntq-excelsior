@@ -84,11 +84,14 @@ module NtqExcelsior
     def extra_headers
       return [] unless schema[:extra_headers].present?
 
-      schema[:extra_headers].map do |header, index|
-        columns = header.map { |col| Exporters::Column.new(col) }
-        NtqExcelsior::Exporters::Header.new(columns, index + 1, worksheet_styles: worksheet_styles.dup,
-                                                                context: context)
+      extra_heads = schema[:extra_headers]
+      extra_heads = [extra_heads] if extra_heads.is_a?(Hash)
+      heads = []
+      extra_heads.each_with_index do |header_line, index|
+        columns = header_line.map { |col| Exporters::Column.new(col, worksheet_styles: worksheet_styles.dup) }
+        heads << NtqExcelsior::Exporters::Header.new(columns, index + 1, worksheet_styles: worksheet_styles.dup)
       end
+      heads
     end
 
     # Returns the styles configuration
@@ -179,8 +182,11 @@ module NtqExcelsior
     # @return [Hash] The sheet content with rows and styles
     def content
       content = { rows: [] }
-      content[:rows].concat(extra_headers.map { |header| resolve_header_row(header) })
-      content[:rows].concat(resolve_header_row(header))
+      extra_headers.each do |header|
+        content[:rows].concat resolve_header_row(header)
+      end
+      headers = header.resolve_rows(context: context)
+      content[:rows].concat(headers)
       @data.each_with_index do |record, data_index|
         current_index = data_index + 1
         if progression_tracker.is_a?(Proc)

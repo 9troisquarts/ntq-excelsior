@@ -142,12 +142,12 @@ module NtqExcelsior
 
         # Place le header parent et fusionne les cellules si nécessaire
         rows_with_cell = place_cell(column, start_col, row, rows_with_children)
-        final_rows = if current_width > 1
+        is_last = row == depth
+        final_rows = if current_width > 1 && column.children.any?
                        merge_cells(rows_with_cell, row, start_col, current_width, :parent)
                      else
                        rows_with_cell
                      end
-
         { next_col: child_start_col, rows: final_rows }
       end
 
@@ -161,8 +161,12 @@ module NtqExcelsior
       # @return [Hash] Prochaine colonne et lignes mises à jour
       def place_leaf_header(column, start_col, row, rows, depth)
         rows_with_cell = place_cell(column, start_col, row, rows, validation: true)
-        final_rows = row < depth - 1 ? merge_cells(rows_with_cell, row, start_col, depth - row, :leaf) : rows_with_cell
-
+        final_rows = if row < depth - 1 && column.children.any?
+                       merge_cells(rows_with_cell, row, start_col, depth - row,
+                                   :leaf)
+                     else
+                       rows_with_cell
+                     end
         { next_col: start_col + 1, rows: final_rows }
       end
 
@@ -207,8 +211,9 @@ module NtqExcelsior
       def merge_cells(rows, row, start_col, span, type)
         return rows if span <= 1
 
-        new_rows = rows.dup
-        new_rows[row] ||= empty_row
+        new_rows = rows
+        new_rows[row] = (rows[row] || empty_row).dup
+        new_rows[row][:merge_cells] = (new_rows[row][:merge_cells] || []).dup
 
         # Détermine la plage de fusion selon le type
         merge_range = case type

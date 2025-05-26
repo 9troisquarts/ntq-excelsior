@@ -29,6 +29,8 @@ module NtqExcelsior
       # @param value [Hash, Proc] The schema configuration or a proc that returns it
       # @return [Hash, Proc] The current schema
       def schema(value = nil)
+        return @schema if value.nil? && defined?(@schema)
+
         @schema ||= value
       end
 
@@ -57,10 +59,8 @@ module NtqExcelsior
     # @return [Hash] The schema configuration
     # @note If the schema is a Proc, it will be called with the context and data
     def schema
-      return @schema if defined?(@schema)
-
       raw_schema = self.class.schema.is_a?(Proc) ? self.class.schema.call(context, data) : self.class.schema
-      @schema = raw_schema.merge(columns: columns)
+      raw_schema.merge(columns: columns)
     end
 
     # Returns the columns for the export

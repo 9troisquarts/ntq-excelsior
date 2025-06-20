@@ -27,6 +27,8 @@ module NtqExcelsior
       end
 
       def schema(value = nil)
+        return @schema if value.nil? && defined?(@schema)
+
         @schema ||= value
       end
 
@@ -45,6 +47,8 @@ module NtqExcelsior
       end
 
       def structure(value = nil)
+        return @structure if value.nil? && defined?(@structure)
+
         @structure ||= value
       end
 
@@ -65,6 +69,14 @@ module NtqExcelsior
       @context = NtqExcelsior::Context.new
     end
 
+    # Returns the schema for the export
+    #
+    # @return [Hash] The schema configuration
+    # @note If the schema is a Proc, it will be called with the context
+    def schema
+      self.class.schema.is_a?(Proc) ? self.class.schema.call(context) : self.class.schema
+    end
+
     def spreadsheet
       return @spreadsheet unless @spreadsheet.nil?
 
@@ -76,7 +88,7 @@ module NtqExcelsior
     def required_headers
       return @required_headers if @required_headers
 
-      @required_columns = self.class.schema.select do |_field, column_config|
+      @required_columns = schema.select do |_field, column_config|
         !column_config.is_a?(Hash) || !column_config.key?(:required) || column_config[:required]
       end
       @required_headers = @required_columns.values.map do |column|
@@ -129,7 +141,7 @@ module NtqExcelsior
       # Read the first line of file (not header)
       l = spreadsheet_data[0].dup || []
 
-      self.class.schema.each do |field, column_config|
+      schema.each do |field, column_config|
         header = column_config.is_a?(Hash) ? column_config[:header] : column_config
         l.each do |parsed_header, _value|
           next unless parsed_header
@@ -142,7 +154,7 @@ module NtqExcelsior
           @header_scheme[parsed_header] = field
         end
       end
-      if self.class.primary_key && !self.class.schema[self.class.primary_key.to_sym]
+      if self.class.primary_key && schema[self.class.primary_key.to_sym]
         @header_scheme[self.class.primary_key.to_s] =
           self.class.primary_key.to_s
       end
@@ -150,7 +162,7 @@ module NtqExcelsior
     end
 
     def schema_config_for_key(key)
-      self.class.schema[key.to_sym]
+      schema[key.to_sym]
     end
 
     def parse_line(line)
@@ -200,7 +212,7 @@ module NtqExcelsior
     def record_attributes(record)
       return @record_attributes if @record_attributes
 
-      @record_attributes = self.class.schema.keys.select { |k| k.to_sym != :id && record.respond_to?(:"#{k}=") }
+      @record_attributes = schema.keys.select { |k| k.to_sym != :id && record.respond_to?(:"#{k}=") }
     end
 
     def set_record_fields(record, line)

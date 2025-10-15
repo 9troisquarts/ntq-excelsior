@@ -22,7 +22,7 @@ module NtqExcelsior
       }.freeze
 
       def initialize(styles = {})
-        @styles = DEFAULT_STYLES.merge(styles)
+        @styles = DEFAULT_STYLES.merge(styles || {})
       end
 
       def get_style(style_key)

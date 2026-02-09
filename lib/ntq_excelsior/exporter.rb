@@ -124,6 +124,16 @@ module NtqExcelsior
       package
     end
 
+    def lines
+      content[:rows]
+    end
+
+    def generate_workbook(workbook, wb_styles)
+      workbook.add_worksheet(name: schema[:name]) do |sheet|
+        add_sheet_content content, wb_styles, sheet
+      end
+    end
+
     private
 
     # Resolves a header row configuration
@@ -193,7 +203,14 @@ module NtqExcelsior
           at = (((current_index.to_d / @data_count) * 100.to_d) / 2).round(2)
           progression_tracker.call(at) if (at % 5).zero?
         end
-        content[:rows] << resolve_record_row(columns, record, current_index)
+        row_content = resolve_record_row(columns, record, current_index)
+        next unless row_content
+
+        if row_content.is_a?(Array)
+          content[:rows].concat(row_content)
+        else
+          content[:rows] << row_content
+        end
       end
       content
     end
@@ -240,12 +257,6 @@ module NtqExcelsior
 
       sheet.column_widths * content[:col_widths] if content[:col_widths].present?
       sheet
-    end
-
-    def generate_workbook(workbook, wb_styles)
-      workbook.add_worksheet(name: schema[:name]) do |sheet|
-        add_sheet_content content, wb_styles, sheet
-      end
     end
   end
 end

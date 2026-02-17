@@ -58,12 +58,17 @@ class UserExporter < NtqExcelsior::Exporter
         visible: true # Optional
       }
       {
-        title: 'Address (nested)',
-        resolve: ['address', 'address_one']
-      },
-      {
-        title: 'City (nested)',
-        resolve: ['address', 'city']
+        title: 'Address',
+        children: [
+          {
+            title: 'Address (nested)',
+            resolve: ['address', 'address_one']
+          },
+          {
+            title: 'City (nested)',
+            resolve: ['address', 'city']
+          }
+        ]
       },
       {
         title: 'Age',

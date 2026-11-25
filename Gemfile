@@ -11,6 +11,6 @@ gem "rspec", "~> 3.0"
 
 gem "rubocop", "~> 1.21"
 
-gem 'caxlsx', "~> 3.2"
+gem 'caxlsx', "~> 4.5"
 
 gem "simplecov"

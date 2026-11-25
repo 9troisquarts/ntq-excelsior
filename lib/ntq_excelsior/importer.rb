@@ -80,8 +80,15 @@ module NtqExcelsior
         !column_config.is_a?(Hash) || !column_config.key?(:required) || column_config[:required]
       end
       @required_headers = @required_columns.values.map do |column|
-                            get_column_header(column)
-                          end.map { |header| transform_header_to_regexp(header) }
+        header = get_column_header(column)
+
+        if header.is_a?(String)
+          normalized_header = normalize_required_marker(header)
+          /\A#{Regexp.escape(normalized_header)}(?:\s*\*)?\z/i
+        else
+          header
+        end
+      end
       if self.class.primary_key && !@required_columns.keys.include?(self.class.primary_key)
         @required_headers.unshift(Regexp.new(self.class.primary_key.to_s, "i"))
       end
@@ -98,7 +105,13 @@ module NtqExcelsior
     rescue Roo::HeaderRowNotFoundError => e
       missing_headers = []
 
-      e.message.delete_prefix("[").delete_suffix("]").split(",").map(&:strip).each do |header_missing|
+      e.message
+       .sub(/\AThe following headers are missing:?:?\s*/, "")
+       .delete_prefix("[")
+       .delete_suffix("]")
+       .split(",")
+       .map(&:strip)
+       .each do |header_missing|
         header_missing_regex = transform_header_to_regexp(header_missing, true)
         header_found = @required_columns.values.find do |column|
           transform_header_to_regexp(get_column_header(column)) == header_missing_regex
@@ -107,14 +120,15 @@ module NtqExcelsior
                              if header_found[:header].is_a?(String)
                                header_found[:header]
                              else
-                               (header_found[:humanized_header] || header_missing)
+                               (header_found[:humanized_header] || humanize_missing_header(header_missing))
                              end
                            elsif header_found&.is_a?(String)
                              header_found
                            else
-                             header_missing
+                             humanize_missing_header(header_missing)
                            end
       end
+
       raise Roo::HeaderRowNotFoundError, missing_headers.join(", ")
     end
 
@@ -131,10 +145,12 @@ module NtqExcelsior
 
       self.class.schema.each do |field, column_config|
         header = column_config.is_a?(Hash) ? column_config[:header] : column_config
+        normalized_expected = header.is_a?(String) ? normalize_required_marker(header) : header
         l.each do |parsed_header, _value|
           next unless parsed_header
 
-          unless header.is_a?(String) && parsed_header == header || (header.is_a?(Regexp) && parsed_header.respond_to?(:match?) && parsed_header.match?(header))
+          normalized_parsed = parsed_header.is_a?(String) ? normalize_required_marker(parsed_header) : parsed_header
+          unless normalized_expected.is_a?(String) && normalized_parsed == normalized_expected || (normalized_expected.is_a?(Regexp) && normalized_parsed.respond_to?(:match?) && normalized_parsed.match?(normalized_expected))
             next
           end
 
@@ -283,10 +299,26 @@ module NtqExcelsior
     def transform_header_to_regexp(header, gsub_enclosure = false)
       return header unless header.is_a?(String)
 
+      header = normalize_required_marker(header)
       if gsub_enclosure && header.scan(%r{^/\^?([^($/)]+)\$?/i?$}i) && ::Regexp.last_match(1)
         header = ::Regexp.last_match(1)
       end
-      Regexp.new("^#{header}$", "i")
+      Regexp.new("^#{::Regexp.escape(header)}(?:\\s*\\*)?$", "i")
+    end
+
+    def normalize_required_marker(header)
+      return header unless header.is_a?(String)
+
+      header.gsub(/\s*\*\s*\z/, "").strip
+    end
+
+    def humanize_missing_header(header)
+      return header unless header.is_a?(String)
+
+      regex_match = header.match(%r{\A/(?:\\A|\^)(?<raw>.*)\(\?:\\s\*\\\*\)\?(?:\\z|\$)/i\z})
+      return header unless regex_match
+
+      regex_match[:raw].gsub(/\\(.)/, '\1')
     end
   end
 end
